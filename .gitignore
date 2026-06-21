@@ -1,0 +1,27 @@
+# Ignore media files
+*.mp4
+*.avi
+*.mkv
+
+# Ignore environment config and secrets
+.env
+.env.*
+
+# Ignore databases
+*.db
+*.sqlite
+
+# Ignore logs
+*.log
+
+# Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# IDE and OS files
+.vscode/
+.idea/
+Thumbs.db
+Ehthumbs.db
+Desktop.ini

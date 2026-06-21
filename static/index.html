@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TechTailor - Customer Experience Agent Simulator</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- FontAwesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- LEFT PANEL: TechTailor Website Simulator -->
+        <main class="simulator-panel">
+            <div class="browser-header">
+                <div class="browser-dots">
+                    <span class="dot red"></span>
+                    <span class="dot yellow"></span>
+                    <span class="dot green"></span>
+                </div>
+                <div class="browser-address-bar">
+                    <i class="fa-solid fa-lock text-green"></i>
+                    <span>https://www.tech-tailor.com</span>
+                </div>
+                <div class="browser-actions">
+                    <span class="browser-badge">SIMULATOR VIEW</span>
+                </div>
+            </div>
+
+            <!-- Virtual Website Viewport -->
+            <div class="website-viewport" id="website-viewport">
+                
+                <!-- Promo Bar -->
+                <div class="promo-bar">
+                    <div class="promo-item"><i class="fa-solid fa-wand-magic-sparkles"></i> Virtual TryOn</div>
+                    <div class="promo-item"><i class="fa-solid fa-tape"></i> Automated Measurements</div>
+                    <div class="promo-item">Get 10% Discount on First Purchase, use code: <strong>START10</strong></div>
+                    <div class="promo-currency">₹ INR <i class="fa-solid fa-chevron-down"></i></div>
+                </div>
+
+                <!-- Navigation Header -->
+                <header class="site-header">
+                    <div class="logo-container" onclick="navigateTo('home')">
+                        <span class="logo-tailor">tech-tailor</span>
+                    </div>
+                    <nav class="main-nav">
+                        <ul>
+                            <li id="nav-home" class="active" onclick="navigateTo('home')">HOME</li>
+                            <li id="nav-men" onclick="navigateTo('men')">MEN</li>
+                            <li id="nav-women" onclick="navigateTo('women')">WOMEN</li>
+                            <li id="nav-accessories" onclick="navigateTo('accessories')">ACCESSORIES</li>
+                        </ul>
+                    </nav>
+                    <div class="header-actions">
+                        <i class="fa-solid fa-magnifying-glass"></i>
+                        <i class="fa-regular fa-user"></i>
+                        <div class="cart-trigger" onclick="toggleDrawer('cart-drawer', true)">
+                            <i class="fa-solid fa-bag-shopping"></i>
+                            <span class="cart-count" id="cart-badge-count">0</span>
+                        </div>
+                    </div>
+                </header>
+
+                <!-- Dynamic Page Target Content -->
+                <div class="page-content" id="page-content">
+                    <!-- Loaded dynamically via js (Home, Men, Women, Accessories, Product Detail) -->
+                </div>
+
+                <!-- Footer element -->
+                <footer class="site-footer">
+                    <p>© 2026 TechTailor Bespoke. All Rights Reserved. | <i class="fa-brands fa-whatsapp"></i> +91 984 5868 848 | <i class="fa-regular fa-envelope"></i> support@tech-tailor.com</p>
+                </footer>
+
+                <!-- Drawer: Choose Fabric -->
+                <div class="drawer-overlay" id="fabric-drawer-overlay" onclick="toggleDrawer('fabric-drawer', false)"></div>
+                <div class="site-drawer" id="fabric-drawer">
+                    <div class="drawer-header">
+                        <h3>CHOOSE FABRIC</h3>
+                        <i class="fa-solid fa-xmark close-btn" onclick="toggleDrawer('fabric-drawer', false)"></i>
+                    </div>
+                    <div class="drawer-body">
+                        <div class="fabric-option active" id="fabric-same" onclick="selectFabricOption('same')">
+                            <div class="fabric-preview-box same-fabric-preview"></div>
+                            <div class="fabric-details">
+                                <span class="fabric-title">Same Fabric (D 963/1)</span>
+                                <span class="fabric-desc">Product will be made with the fabric shown in the catalogue.</span>
+                            </div>
+                            <i class="fa-solid fa-circle-check check-icon"></i>
+                        </div>
+
+                        <div class="fabric-divider"><span>OR</span></div>
+
+                        <div class="fabric-option" id="fabric-catalog" onclick="selectFabricOption('catalog')">
+                            <div class="fabric-preview-box catalog-fabric-preview" id="catalog-fabric-color"></div>
+                            <div class="fabric-details">
+                                <span class="fabric-title">Choose Another Fabric</span>
+                                <span class="fabric-desc">Select from our premium fabric catalogue.</span>
+                                <select id="catalog-fabric-select" onchange="updateCatalogFabric(this.value)" onclick="event.stopPropagation()">
+                                    <option value="D 963/1 - Suit Soft stone">D 963/1 - Suit Soft stone</option>
+                                    <option value="AC 103/1 - Suit Pearl">AC 103/1 - Suit Pearl</option>
+                                    <option value="AC 103/2 - Suit Navy">AC 103/2 - Suit Navy</option>
+                                    <option value="AC 103/8 - Suit Beige">AC 103/8 - Suit Beige</option>
+                                    <option value="AW 267/3 - Jacket Fawn">AW 267/3 - Jacket Fawn</option>
+                                    <option value="AW 268/1 - Jacket Cobalt blue">AW 268/1 - Jacket Cobalt blue</option>
+                                    <option value="CHARCOAL DUSK TWILL - PDW40">CHARCOAL DUSK TWILL - PDW40</option>
+                                    <option value="D 922/3 - Suit Steal blue">D 922/3 - Suit Steal blue</option>
+                                    <option value="D 936/2 - Suit Burnt maroon">D 936/2 - Suit Burnt maroon</option>
+                                    <option value="D 959/2 - Suit Hunter green">D 959/2 - Suit Hunter green</option>
+                                    <option value="DRIFTWOOD BEIGE - PDW13">DRIFTWOOD BEIGE - PDW13</option>
+                                    <option value="ICY SKY MIST - PDW04">ICY SKY MIST - PDW04</option>
+                                    <option value="MISTY AQUA - PDW06">MISTY AQUA - PDW06</option>
+                                    <option value="STEEL SHADOW TWILL - S15">STEEL SHADOW TWILL - S15</option>
+                                    <option value="V 712/11 - Jacket Soft Pink">V 712/11 - Jacket Soft Pink</option>
+                                    <option value="V 712/12 - Jacket Pistachio">V 712/12 - Jacket Pistachio</option>
+                                    <option value="V 712/13 - Jacket Mauve Grey">V 712/13 - Jacket Mauve Grey</option>
+                                    <option value="V 712/3 - Bandhgala Burgundy">V 712/3 - Bandhgala Burgundy</option>
+                                    <option value="WD 201/2 - Suit Royal blue">WD 201/2 - Suit Royal blue</option>
+                                    <option value="WL 212/1 - Jacket Blush">WL 212/1 - Jacket Blush</option>
+                                </select>
+                            </div>
+                            <i class="fa-solid fa-circle-check check-icon"></i>
+                        </div>
+
+                        <div class="fabric-divider"><span>OR</span></div>
+
+                        <div class="fabric-option" id="fabric-own" onclick="selectFabricOption('own')">
+                            <div class="fabric-preview-box own-fabric-preview">
+                                <i class="fa-solid fa-scissors"></i>
+                            </div>
+                            <div class="fabric-details">
+                                <span class="fabric-title">Use My Fabric</span>
+                                <span class="fabric-desc">*Only in selected cities. A technician will collect your fabric during measurement appointment.</span>
+                            </div>
+                            <i class="fa-solid fa-circle-check check-icon"></i>
+                        </div>
+
+                        <button class="btn btn-gold w-full mt-2" onclick="confirmFabricSelection()">Apply Fabric</button>
+                    </div>
+                </div>
+
+                <!-- Drawer: Measurements & Customizations -->
+                <div class="drawer-overlay" id="custom-drawer-overlay" onclick="toggleDrawer('custom-drawer', false)"></div>
+                <div class="site-drawer" id="custom-drawer">
+                    <div class="drawer-header">
+                        <h3>MEASUREMENTS & SERVICE</h3>
+                        <i class="fa-solid fa-xmark close-btn" onclick="toggleDrawer('custom-drawer', false)"></i>
+                    </div>
+                    <div class="drawer-body">
+                        <!-- Fit Inputs -->
+                        <div class="form-group">
+                            <label>Choose Height <span class="required">*</span></label>
+                            <select id="measure-height" class="form-control" onchange="validateFormFields()">
+                                <option value="">Select Height</option>
+                                <option value="short">Short (&lt;5'5" | &lt;168cm)</option>
+                                <option value="regular">Regular (5'5"-6'1" | 168-186cm)</option>
+                                <option value="tall">Tall (&gt;6'1" | &gt;186cm)</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Choose Body Type <span class="required">*</span></label>
+                            <select id="measure-body-type" class="form-control" onchange="validateFormFields()">
+                                <option value="">Select Body Type</option>
+                                <option value="ectomorph_men">ectomorph_men</option>
+                                <option value="mesomorph_men">mesomorph_men</option>
+                                <option value="endomorph_men">endomorph_men</option>
+                            </select>
+                        </div>
+
+                        <!-- Size selection method tabs -->
+                        <div class="size-tabs">
+                            <button class="size-tab active" id="tab-ready" onclick="selectSizeMethod('ready')">Ready Size</button>
+                            <button class="size-tab" id="tab-custom" onclick="selectSizeMethod('custom')">Custom Size</button>
+                        </div>
+
+                        <!-- Panel: Ready Size -->
+                        <div class="size-panel active" id="panel-ready">
+                            <div class="form-group">
+                                <label>Jacket Size</label>
+                                <select id="ready-jacket-size" class="form-control">
+                                    <option value="">Choose size</option>
+                                    <option value="EU 48 | INTERNATIONAL S | UK/US 38">EU 48 | INTERNATIONAL S | UK/US 38</option>
+                                    <option value="EU 50 | INTERNATIONAL M | UK/US 40" selected>EU 50 | INTERNATIONAL M | UK/US 40</option>
+                                    <option value="EU 52 | INTERNATIONAL L | UK/US 42">EU 52 | INTERNATIONAL L | UK/US 42</option>
+                                    <option value="EU 54 | INTERNATIONAL XL | UK/US 44">EU 54 | INTERNATIONAL XL | UK/US 44</option>
+                                    <option value="EU 56 | INTERNATIONAL 2XL | UK/US 46">EU 56 | INTERNATIONAL 2XL | UK/US 46</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Trouser Size</label>
+                                <select id="ready-trouser-size" class="form-control">
+                                    <option value="">Choose size</option>
+                                    <option value="EU 40 | INTERNATIONAL S | UK/US 30">EU 40 | INTERNATIONAL S | UK/US 30</option>
+                                    <option value="EU 42 | INTERNATIONAL M | UK/US 32" selected>EU 42 | INTERNATIONAL M | UK/US 32</option>
+                                    <option value="EU 44 | INTERNATIONAL L | UK/US 34">EU 44 | INTERNATIONAL L | UK/US 34</option>
+                                    <option value="EU 46 | INTERNATIONAL XL | UK/US 36">EU 46 | INTERNATIONAL XL | UK/US 36</option>
+                                    <option value="EU 48 | INTERNATIONAL 2XL | UK/US 38">EU 48 | INTERNATIONAL 2XL | UK/US 38</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- Panel: Custom Sizes -->
+                        <div class="size-panel" id="panel-custom">
+                            <div class="form-group">
+                                <label>Select Fitting</label>
+                                <select id="custom-fitting" class="form-control">
+                                    <option value="">Select a fitting</option>
+                                    <option value="regular_fit" selected>Regular Fit</option>
+                                    <option value="slim_fit">Slim Fit</option>
+                                    <option value="loose_fit">Loose Fit</option>
+                                </select>
+                            </div>
+                            <div class="custom-inputs-grid">
+                                <!-- Jacket Measurements (Upper) -->
+                                <div style="grid-column: span 2; font-weight: 600; font-size: 0.72rem; margin: 0.5rem 0 0.2rem 0; color: var(--gold); border-bottom: 1px solid var(--border-color); padding-bottom: 2px; letter-spacing: 0.05em; text-transform: uppercase;">Jacket Measurements (Inches)</div>
+                                <div class="form-group">
+                                    <label>Bust</label>
+                                    <input type="number" id="cust-bust" class="form-control" placeholder="38" min="1" step="any">
+                                </div>
+                                <div class="form-group">
+                                    <label>Waist</label>
+                                    <input type="number" id="cust-waist" class="form-control" placeholder="32" min="1" step="any">
+                                </div>
+                                <div class="form-group">
+                                    <label>Hips</label>
+                                    <input type="number" id="cust-hips" class="form-control" placeholder="40" min="1" step="any">
+                                </div>
+                                <div class="form-group">
+                                    <label>Upper</label>
+                                    <input type="number" id="cust-upper" class="form-control" placeholder="36" min="1" step="any">
+                                </div>
+                                <div class="form-group">
+                                    <label>Neck</label>
+                                    <input type="number" id="cust-neck" class="form-control" placeholder="15" min="1" step="any">
+                                </div>
+                                <div class="form-group">
+                                    <label>Outer Arm</label>
+                                    <input type="number" id="cust-outer-arm" class="form-control" placeholder="25" min="1" step="any">
+                                </div>
+                                <div class="form-group">
+                                    <label>Shoulder</label>
+                                    <input type="number" id="cust-shoulder" class="form-control" placeholder="18" min="1" step="any">
+                                </div>
+                                <div class="form-group">
+                                    <label>Length</label>
+                                    <input type="number" id="cust-length" class="form-control" placeholder="29" min="1" step="any">
+                                </div>
+                                <div class="form-group">
+                                    <label>Width</label>
+                                    <input type="number" id="cust-width" class="form-control" placeholder="17" min="1" step="any">
+                                </div>
+                                <div class="form-group">
+                                    <label>Neck Point</label>
+                                    <input type="number" id="cust-neck-point" class="form-control" placeholder="6" min="1" step="any">
+                                </div>
+
+                                <!-- Trouser Measurements (Lower) -->
+                                <div style="grid-column: span 2; font-weight: 600; font-size: 0.72rem; margin: 1rem 0 0.2rem 0; color: var(--gold); border-bottom: 1px solid var(--border-color); padding-bottom: 2px; letter-spacing: 0.05em; text-transform: uppercase;">Trouser Measurements (Inches)</div>
+                                <div class="form-group">
+                                    <label>Crotch</label>
+                                    <input type="number" id="cust-crotch" class="form-control" placeholder="26" min="1" step="any">
+                                </div>
+                                <div class="form-group">
+                                    <label>Cuff</label>
+                                    <input type="number" id="cust-cuff" class="form-control" placeholder="14" min="1" step="any">
+                                </div>
+                                <div class="form-group">
+                                    <label>Lower Hips</label>
+                                    <input type="number" id="cust-lower-hips" class="form-control" placeholder="40" min="1" step="any">
+                                </div>
+                                <div class="form-group">
+                                    <label>Thigh</label>
+                                    <input type="number" id="cust-thigh" class="form-control" placeholder="22" min="1" step="any">
+                                </div>
+                                <div class="form-group">
+                                    <label>Lower Length</label>
+                                    <input type="number" id="cust-lower-length" class="form-control" placeholder="40" min="1" step="any">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="fabric-divider"><span>OR</span></div>
+
+                        <!-- Schedule Technician Collapsible -->
+                        <div class="appointment-section">
+                            <div class="appointment-header" onclick="toggleAppointmentSection()">
+                                <span><i class="fa-regular fa-calendar-check"></i> Schedule Measurement Technician</span>
+                                <i class="fa-solid fa-chevron-down" id="appointment-chevron"></i>
+                            </div>
+                            <div class="appointment-body" id="appointment-body">
+                                <p class="text-sm">Have a professional tailor visit your home to take accurate measurements and collect fabric if needed.</p>
+                                <div class="form-group mt-2">
+                                    <label>Select City</label>
+                                    <select id="appt-city" class="form-control">
+                                        <option value="">Choose City</option>
+                                        <option value="Bangalore">Bangalore</option>
+                                        <option value="Mumbai">Mumbai</option>
+                                        <option value="Gurgaon">Gurgaon</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label>Preferred Date</label>
+                                    <input type="date" id="appt-date" class="form-control">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Validation Warning Box -->
+                        <div class="validation-warning" id="custom-warning">
+                            <i class="fa-solid fa-triangle-exclamation"></i>
+                            <span id="warning-text">Please fill out all required fields.</span>
+                        </div>
+
+                        <button class="btn btn-gold w-full mt-3" onclick="submitCustomization()">Add to Bag</button>
+                    </div>
+                </div>
+
+                <!-- Drawer: Cart/Bag -->
+                <div class="drawer-overlay" id="cart-drawer-overlay" onclick="toggleDrawer('cart-drawer', false)"></div>
+                <div class="site-drawer" id="cart-drawer">
+                    <div class="drawer-header">
+                        <h3>SHOPPING BAG</h3>
+                        <i class="fa-solid fa-xmark close-btn" onclick="toggleDrawer('cart-drawer', false)"></i>
+                    </div>
+                    <div class="drawer-body flex-column h-full">
+                        <div class="cart-items-list" id="cart-items-list">
+                            <!-- Items dynamically added -->
+                            <div class="empty-cart-message" id="empty-cart-message">
+                                <i class="fa-solid fa-bag-shopping"></i>
+                                <p>Your bag is empty.</p>
+                            </div>
+                        </div>
+                        <div class="cart-totals-section" id="cart-totals-section" style="display: none;">
+                            <div class="totals-row">
+                                <span>Subtotal</span>
+                                <span id="cart-subtotal">₹ 0</span>
+                            </div>
+                            <div class="totals-row">
+                                <span>GST (18%)</span>
+                                <span id="cart-gst">₹ 0</span>
+                            </div>
+                            <div class="totals-row total-row-main">
+                                <span>Total</span>
+                                <span id="cart-total">₹ 0</span>
+                            </div>
+                            <button class="btn btn-gold w-full mt-3" onclick="checkoutMock()">Proceed to Checkout</button>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </main>
+
+        <!-- RIGHT PANEL: TechTailor AI Concierge (Agent) -->
+        <aside class="agent-panel">
+            <div class="agent-header">
+                <div class="agent-title-bar">
+                    <div class="agent-avatar">
+                        <i class="fa-solid fa-wand-magic-sparkles"></i>
+                    </div>
+                    <div>
+                        <h2>TechTailor AI Stylist</h2>
+                        <div class="agent-status">
+                            <span class="status-indicator online"></span>
+                            <span id="status-text">Ready to tailor</span>
+                        </div>
+                    </div>
+                </div>
+                <!-- API Key Control -->
+                <div class="api-key-container">
+                    <button class="api-key-btn" onclick="toggleApiKeyInput()">
+                        <i class="fa-solid fa-key"></i> <span id="key-btn-text">Groq API Key</span>
+                    </button>
+                    <div class="api-key-dropdown" id="api-key-dropdown">
+                        <p class="text-sm">Configure Groq API Key to power the chatbot:</p>
+                        <input type="password" id="groq-api-key-input" placeholder="gsk_..." class="form-control mt-1">
+                        <div class="mt-2 flex gap-1">
+                            <button class="btn btn-sm btn-gold" onclick="saveApiKey()">Save</button>
+                            <button class="btn btn-sm btn-dark" onclick="toggleApiKeyInput()">Cancel</button>
+                        </div>
+                        <p class="text-xs text-muted mt-1">Stored securely in browser memory/locally.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="workflow-status-panel">
+                <div class="workflow-status-label">Active Workflow</div>
+                <div class="workflow-status-title" id="workflow-title">Master Entry Router</div>
+                <div class="workflow-status-meta">
+                    <span id="workflow-bucket">exploring</span>
+                    <span id="workflow-id">master_entry</span>
+                </div>
+                <p class="workflow-status-summary" id="workflow-summary">Route the visitor into the right TechTailor journey.</p>
+            </div>
+
+            <!-- Chat messages box -->
+            <div class="chat-messages" id="chat-messages">
+                <div class="message system-msg">
+                    <div class="message-bubble">
+                        Welcome to TechTailor! I am your AI Bespoke Assistant. I can help you search, select fabric, customized sizes, and schedule tailors.
+                        <br><br>
+                        <strong>How I can control the website:</strong> If you tell me what you want, I will automatically navigate pages, customize sizes, choose fabric, or schedule appointments on the site for you!
+                        <br><br>
+                        <em>Please check that your Groq API key is set in the top right to start chatting!</em>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Agent Activity Log Tracker -->
+            <div class="activity-tracker" id="activity-tracker">
+                <div class="tracker-header">
+                    <span><i class="fa-solid fa-gears"></i> Agent Operations Monitor</span>
+                </div>
+                <div class="tracker-body" id="tracker-body">
+                    <div class="tracker-event italic text-muted">No operations executed yet.</div>
+                </div>
+            </div>
+
+            <!-- Chat Input Area -->
+            <div class="chat-input-area">
+                <!-- Suggestion tags -->
+                <div class="suggestion-tags">
+                    <button onclick="sendSuggestion('Show me men\'s suits')">Show Men's Suits</button>
+                    <button onclick="sendSuggestion('Configure a Silver Slate suit: regular size M, height regular, and add to bag')">Fast Customize</button>
+                    <button onclick="sendSuggestion('Can I book a home measurement in Bangalore for this Friday?')">Book Tailor Appointment</button>
+                </div>
+                <div class="input-row">
+                    <textarea id="chat-input" placeholder="Type a message to the stylist..." rows="1" onkeydown="handleInputKey(event)"></textarea>
+                    <button class="send-btn" id="send-button" onclick="sendMessage()">
+                        <i class="fa-solid fa-paper-plane"></i>
+                    </button>
+                </div>
+            </div>
+        </aside>
+    </div>
+
+    <!-- Notification popups -->
+    <div class="toast" id="toast">
+        <span id="toast-message">Success!</span>
+    </div>
+
+    <!-- Script loading -->
+    <script src="/static/app.js"></script>
+</body>
+</html>
