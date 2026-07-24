@@ -36,10 +36,11 @@ ALLOWED_ACTION_TYPES = {
     "handoff_human",
     "save_preferences",
     "start_consultation",
+    "present_options",
 }
 
 ALLOWED_PAGES = {"home", "men", "women", "accessories"}
-ALLOWED_PRODUCT_IDS = {"silver-slate", "pearl-white", "umber-pinstripe", "soot-black"}
+ALLOWED_PRODUCT_IDS = {"silver-slate", "pearl-white", "umber-pinstripe", "soot-black", "misty-aqua", "charcoal-blazer", "printed-tie-combo", "mens-belt"}
 ALLOWED_FABRIC_TYPES = {"same", "catalog", "own"}
 ALLOWED_HEIGHTS = {"short", "regular", "tall"}
 ALLOWED_BODY_TYPES = {"ectomorph_men", "mesomorph_men", "endomorph_men"}
@@ -130,7 +131,7 @@ def _branch_prompt(branch: str) -> str:
     prompts = {
         "sales": (
             "Drive toward selection, sizing, fabric choice, and checkout. "
-            "Be concise, guide the customer to the next conversion step, and include helpful upsells only when relevant."
+            "Be concise, guide the customer to the next conversion step, and present clear options or product cards."
         ),
         "support": (
             "Handle the issue with empathy and operational clarity. "
@@ -152,10 +153,51 @@ def _branch_prompt(branch: str) -> str:
     return prompts[branch]
 
 
-def _build_system_prompt(workflow, related, branch: str) -> str:
+def _extract_session_slots(messages: List[Dict[str, str]]) -> Dict[str, Any]:
+    text = " ".join([m.get("content", "").lower() for m in messages if m.get("role") == "user"])
+    slots = {}
+    if "shirt" in text:
+        slots["garment"] = "Custom Shirt"
+    elif "suit" in text or "tuxedo" in text or "blazer" in text:
+        slots["garment"] = "Custom Suit"
+    elif "wedding" in text or "groom" in text:
+        slots["garment"] = "Wedding Wear"
+    elif "ethnic" in text or "kurta" in text or "sherwani" in text:
+        slots["garment"] = "Ethnic Wear"
+    elif "accessory" in text or "tie" in text or "belt" in text:
+        slots["garment"] = "Accessories"
+
+    for occ in ["office", "wedding", "party", "casual", "interview", "travel", "diwali", "reception"]:
+        if occ in text:
+            slots["occasion"] = occ.title()
+            break
+
+    for fab in ["wool", "cashmere", "linen", "cotton", "silk", "soft stone", "pearl", "navy", "cobalt"]:
+        if fab in text:
+            slots["fabric"] = fab.title()
+            break
+
+    for fit in ["slim", "regular", "relaxed", "loose"]:
+        if fit in text:
+            slots["fit"] = fit.title()
+            break
+
+    for city in ["mumbai", "bangalore", "gurgaon"]:
+        if city in text:
+            slots["city"] = city.title()
+            break
+
+    return slots
+
+
+def _build_system_prompt(workflow, related, branch: str, messages: List[Dict[str, str]] = None) -> str:
     related_text = "\n".join([f"- {item.title} ({item.id})" for item in related]) if related else "- None"
-    return f"""You are the TechTailor AI Concierge.
-You are operating inside a LangGraph workflow. Follow the selected workflow and branch policy exactly.
+    messages = messages or []
+    slots = _extract_session_slots(messages)
+    turn_count = len([m for m in messages if m.get("role") == "user"])
+
+    return f"""You are the TechTailor AI Concierge & Executive Shopping Assistant.
+You are operating inside a LangGraph workflow to guide customers from discovery to customization, sizing, and checkout.
 
 Selected workflow:
 {render_workflow_brief(workflow)}
@@ -166,18 +208,20 @@ Branch policy:
 Related workflows:
 {related_text}
 
-Rules:
-- Ask only for missing details.
-- Keep the reply concise, useful, and action-oriented.
-- Return valid JSON with exactly two top-level keys: response and actions.
-- Actions must be an array of objects. Use only actions that match the user's intent.
-- If the intent spans multiple workflows, stay in the current branch and ask one clarifying question.
+Session Memory State:
+- Turn Count: {turn_count}
+- Already Identified Details: {json.dumps(slots) if slots else "None yet"}
 
-Supported actions:
-- Core: navigate, select_product, customize_fabric, customize_measurements, schedule_technician, add_to_bag, open_cart
-- Workflow: show_workflow_summary, capture_lead, show_recommendations, compare_products, request_photo, show_style_preview, set_budget, offer_alternative, show_shipping, request_measurements, create_quote, handoff_human, save_preferences, start_consultation
+STRICT SHOPPING AGENT RULES:
+1. PROGRESS THE SHOPPING FUNNEL: Do NOT ask the same question twice if details are already in 'Already Identified Details'. Move directly to the next stage (e.g., Occasion -> Fabric/Product Recommendation -> Sizing/Measurements -> Add to Bag).
+2. ALWAYS PROVIDE CLICKABLE OPTIONS: Whenever you ask a question or offer choices, you MUST include a `present_options` action in your JSON `actions` array with 3 to 5 clear options.
+   Example action: `{{"type": "present_options", "title": "Choose Occasion", "options": ["Office Formal", "Wedding Reception", "Casual Weekend", "Party Wear"]}}`
+3. VISUAL PRODUCT & FABRIC RECOMMENDATIONS: When recommending suits or garments, output a `show_recommendations` action with product IDs (`silver-slate`, `pearl-white`, `umber-pinstripe`, `soot-black`, `misty-aqua`, `printed-tie-combo`, `mens-belt`). When discussing fabrics, output a `customize_fabric` action.
+4. SIZING & TAILORING: Offer `request_measurements` or `schedule_technician` (cities: Mumbai, Bangalore, Gurgaon) actions when sizing is discussed.
+5. DRIVE TO CART: When customer expresses interest in buying or ordering, output `add_to_bag` or `open_cart` action to complete the purchase flow.
+6. Keep text responses concise (2-4 sentences max), polite, and action-driven.
 
-Return JSON only."""
+Return valid JSON with keys: response and actions."""
 
 
 def _call_model(messages: List[Any], model_name: str) -> Dict[str, Any]:
@@ -244,77 +288,41 @@ def _normalize_actions(actions: Any, workflow_id: str) -> List[Dict[str, Any]]:
 
         if action_type == "navigate":
             page = item.get("page")
-            if page in ALLOWED_PAGES:
-                normalized["page"] = page
-            else:
-                continue
+            normalized["page"] = page if page in ALLOWED_PAGES else "men"
         elif action_type == "select_product":
             product_id = item.get("product_id")
-            if product_id in ALLOWED_PRODUCT_IDS:
-                normalized["product_id"] = product_id
-            else:
-                continue
+            normalized["product_id"] = product_id if product_id in ALLOWED_PRODUCT_IDS else "silver-slate"
         elif action_type == "customize_fabric":
-            fabric_type = item.get("fabric_type")
-            if fabric_type not in ALLOWED_FABRIC_TYPES:
-                continue
-            normalized["fabric_type"] = fabric_type
-            fabric_name = item.get("fabric_name")
-            if fabric_name in FABRIC_NAMES:
-                normalized["fabric_name"] = fabric_name
+            normalized["fabric_type"] = item.get("fabric_type", "catalog")
+            if item.get("fabric_name"):
+                normalized["fabric_name"] = item["fabric_name"]
         elif action_type == "customize_measurements":
-            height = item.get("height")
-            body_type = item.get("body_type")
-            size_method = item.get("size_method")
-            if height in ALLOWED_HEIGHTS:
-                normalized["height"] = height
-            if body_type in ALLOWED_BODY_TYPES:
-                normalized["body_type"] = body_type
-            if size_method in ALLOWED_SIZE_METHODS:
-                normalized["size_method"] = size_method
-            if item.get("ready_jacket_size"):
-                normalized["ready_jacket_size"] = item["ready_jacket_size"]
-            if item.get("ready_trouser_size"):
-                normalized["ready_trouser_size"] = item["ready_trouser_size"]
-            if item.get("fitting") in ALLOWED_FITTINGS:
-                normalized["fitting"] = item["fitting"]
-            custom_measurements = item.get("custom_measurements")
-            if isinstance(custom_measurements, dict):
-                normalized["custom_measurements"] = {
-                    key: value
-                    for key, value in custom_measurements.items()
-                    if key
-                    in {
-                        "bust",
-                        "waist",
-                        "hips",
-                        "upper",
-                        "neck",
-                        "outer_arm",
-                        "shoulder",
-                        "length",
-                        "width",
-                        "neck_point",
-                        "crotch",
-                        "cuff",
-                        "lower_hips",
-                        "thigh",
-                        "lower_length",
-                    }
-                }
+            for field in ["height", "body_type", "size_method", "ready_jacket_size", "ready_trouser_size", "fitting", "custom_measurements"]:
+                if field in item:
+                    normalized[field] = item[field]
         elif action_type == "schedule_technician":
-            city = item.get("city")
-            date = item.get("date")
-            if city in ALLOWED_CITIES:
-                normalized["city"] = city
+            if item.get("city"):
+                normalized["city"] = item["city"]
+            if item.get("date"):
+                normalized["date"] = item["date"]
+        elif action_type == "present_options":
+            normalized["title"] = item.get("title", "Select an option:")
+            opts = item.get("options", [])
+            if isinstance(opts, list):
+                normalized["options"] = [str(o) for o in opts]
+        elif action_type in {"show_recommendations", "compare_products", "offer_alternative"}:
+            if item.get("product_ids") and isinstance(item["product_ids"], list):
+                normalized["product_ids"] = item["product_ids"]
+            elif item.get("product_id"):
+                normalized["product_ids"] = [item["product_id"]]
             else:
-                continue
-            if isinstance(date, str) and re.match(r"^\d{4}-\d{2}-\d{2}$", date):
-                normalized["date"] = date
-            else:
-                continue
-        elif action_type == "show_workflow_summary":
-            normalized["workflow_id"] = item.get("workflow_id", workflow_id)
+                normalized["product_ids"] = ["silver-slate", "pearl-white"]
+            if item.get("title"):
+                normalized["title"] = item["title"]
+        else:
+            for k, v in item.items():
+                normalized[k] = v
+
         cleaned.append(normalized)
     return cleaned
 
@@ -332,7 +340,7 @@ def _generate_response(state: AgentState, branch: str) -> AgentState:
 
     workflow = WORKFLOW_INDEX[workflow_id]
     related = related_workflows(workflow)
-    system_prompt = state.get("system_prompt") or _build_system_prompt(workflow, related, branch)
+    system_prompt = state.get("system_prompt") or _build_system_prompt(workflow, related, branch, state.get("messages", []))
     api_messages: List[Dict[str, str]] = [{"role": "system", "content": system_prompt}]
     for message in state["messages"]:
         role = message.get("role")

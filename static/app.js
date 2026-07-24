@@ -827,7 +827,7 @@ async function sendMessage() {
         const assistantContent = data.error
             ? `${data.response || 'The agent could not complete the request.'}\n\nError: ${data.error}`
             : data.response;
-        addMessageToChat('assistant', assistantContent);
+        addMessageToChat('assistant', assistantContent, data.actions || []);
         state.chatHistory.push({ role: 'assistant', content: assistantContent });
 
         // Process any returned structured actions
@@ -854,7 +854,58 @@ function sendSuggestion(text) {
     sendMessage();
 }
 
-function addMessageToChat(role, content) {
+function quickAddToCart(productId) {
+    let foundProduct = null;
+    for (const [cat, items] of Object.entries(CATALOG)) {
+        foundProduct = items.find(p => p.id === productId);
+        if (foundProduct) break;
+    }
+
+    if (!foundProduct) {
+        foundProduct = CATALOG.men[0];
+    }
+
+    const cartItem = {
+        id: foundProduct.id,
+        name: foundProduct.name,
+        price: foundProduct.price,
+        image: foundProduct.image,
+        options: `Fabric: ${state.customization.selectedCatalogFabric || 'Default'} | ${state.customization.sizeMethod === 'custom' ? 'Custom Measurement' : 'Ready Size'}`
+    };
+
+    state.cart.push(cartItem);
+    updateCartUI();
+    showToast(`Added ${foundProduct.name} to Shopping Bag!`);
+    toggleDrawer('cart-drawer', true);
+    updateMonitor(`Result: Added '${foundProduct.name}' to Bag directly from Chat Widget`);
+}
+
+function quickCustomizeProduct(productId) {
+    selectProduct(productId);
+    openCustomizerDrawer();
+    showToast("Opened Customization & Sizing panel!");
+}
+
+function selectFabricFromChat(fabricName) {
+    state.customization.selectedFabricType = 'catalog';
+    state.customization.selectedCatalogFabric = fabricName;
+    confirmFabricSelection();
+    showToast(`Fabric selected: ${fabricName}`);
+    updateMonitor(`Result: Fabric set to '${fabricName}' from Chat Widget`);
+}
+
+function quickScheduleVisit(city) {
+    openCustomizerDrawer();
+    expandAppointmentSection(true);
+    document.getElementById('appt-city').value = city;
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    document.getElementById('appt-date').value = tomorrow.toISOString().split('T')[0];
+    showToast(`Scheduled Technician visit in ${city}!`);
+    updateMonitor(`Result: Technician visit set for ${city}`);
+}
+
+function addMessageToChat(role, content, actions = []) {
     const container = document.getElementById('chat-messages');
     const msgDiv = document.createElement('div');
     msgDiv.className = `message ${role === 'user' ? 'user-msg' : 'assistant-msg'}`;
@@ -868,11 +919,145 @@ function addMessageToChat(role, content) {
         .replace(/- (.*?)(<br>|$)/g, '<li>$1</li>');
         
     if (parsedContent.includes('<li>')) {
-        // Wrap grouped list items in <ul>
         parsedContent = parsedContent.replace(/(<li>.*?<\/li>)+/g, '<ul>$&</ul>');
     }
 
-    msgDiv.innerHTML = `<div class="message-bubble">${parsedContent}</div>`;
+    let widgetHTML = '';
+
+    if (role === 'assistant') {
+        // 1. Check for options actions or explicit question choices in text
+        const optionsAction = actions.find(a => a.type === 'present_options');
+        let optionsList = optionsAction?.options || [];
+
+        // Fallback: If no explicit action but message contains question or options
+        if (optionsList.length === 0) {
+            if (content.toLowerCase().includes('occasion') || content.toLowerCase().includes('bring you')) {
+                optionsList = ['Office Formal', 'Wedding Reception', 'Casual Weekend', 'Party Wear', 'Travel / Resort'];
+            } else if (content.toLowerCase().includes('fabric')) {
+                optionsList = ['Superfine Wool', 'Italian Cashmere', 'Summer Linen', 'Pure Cotton', 'Blended Fabric'];
+            } else if (content.toLowerCase().includes('fit') || content.toLowerCase().includes('sizing') || content.toLowerCase().includes('measure')) {
+                optionsList = ['Slim Fit', 'Regular Fit', 'Ready Sizing (M/L/XL)', 'Book Doorstep Tailor Visit'];
+            } else if (content.toLowerCase().includes('recommend') || content.toLowerCase().includes('look')) {
+                optionsList = ['View Suits', 'View Shirts', 'View Ethnic Wear', 'View Accessories'];
+            }
+        }
+
+        if (optionsList.length > 0) {
+            const titleText = optionsAction?.title || 'Quick Selection:';
+            widgetHTML += `
+                <div class="chat-widget-options">
+                    <div class="chat-widget-title">${titleText}</div>
+                    <div class="chat-options-chips">
+                        ${optionsList.map(opt => `<button class="chat-chip-btn" onclick="sendSuggestion('${opt.replace(/'/g, "\\'")}')">${opt}</button>`).join('')}
+                    </div>
+                </div>
+            `;
+        }
+
+        // 2. Check for product recommendations action
+        const recAction = actions.find(a => ['show_recommendations', 'compare_products', 'offer_alternative'].includes(a.type));
+        let productIds = recAction?.product_ids || [];
+        if (productIds.length === 0 && (content.toLowerCase().includes('suit') || content.toLowerCase().includes('recommend') || content.toLowerCase().includes('collection'))) {
+            productIds = ['silver-slate', 'pearl-white', 'umber-pinstripe'];
+        }
+
+        if (productIds.length > 0) {
+            let cardsHTML = '';
+            productIds.forEach(id => {
+                let p = null;
+                for (const items of Object.values(CATALOG)) {
+                    p = items.find(x => x.id === id);
+                    if (p) break;
+                }
+                if (p) {
+                    const hasImg = !!p.image;
+                    cardsHTML += `
+                        <div class="chat-product-card">
+                            <div class="chat-product-img">
+                                ${hasImg ? `<img src="${p.image}" alt="${p.name}">` : `<div class="chat-product-fallback"><i class="fa-solid fa-shirt"></i></div>`}
+                            </div>
+                            <div class="chat-product-info">
+                                <div class="chat-product-name">${p.name}</div>
+                                <div class="chat-product-price">₹ ${p.price.toLocaleString()} <span class="chat-product-strike">₹ ${p.priceStrike.toLocaleString()}</span></div>
+                                <div class="chat-product-actions">
+                                    <button class="btn btn-xs btn-gold" onclick="selectProduct('${p.id}')">View Details</button>
+                                    <button class="btn btn-xs btn-outline" onclick="quickCustomizeProduct('${p.id}')">Customize</button>
+                                    <button class="btn btn-xs btn-dark" onclick="quickAddToCart('${p.id}')">+ Bag</button>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }
+            });
+            if (cardsHTML) {
+                widgetHTML += `
+                    <div class="chat-widget-section">
+                        <div class="chat-widget-title"><i class="fa-solid fa-sparkles text-gold"></i> Recommended Collections:</div>
+                        <div class="chat-products-carousel">${cardsHTML}</div>
+                    </div>
+                `;
+            }
+        }
+
+        // 3. Fabric Swatch Gallery Widget
+        if (content.toLowerCase().includes('fabric') || actions.some(a => a.type === 'customize_fabric')) {
+            const fabrics = [
+                { name: "D 963/1 - Suit Soft stone", color: "#8e9196" },
+                { name: "AC 103/1 - Suit Pearl", color: "#f0ede6" },
+                { name: "AW 268/1 - Jacket Cobalt blue", color: "#1d3557" },
+                { name: "V 712/3 - Bandhgala Burgundy", color: "#4a0e17" }
+            ];
+            widgetHTML += `
+                <div class="chat-widget-section">
+                    <div class="chat-widget-title"><i class="fa-solid fa-palette text-gold"></i> Premium Fabric Swatches:</div>
+                    <div class="chat-fabrics-grid">
+                        ${fabrics.map(f => `
+                            <div class="chat-fabric-item" onclick="selectFabricFromChat('${f.name}')">
+                                <span class="chat-fabric-badge" style="background:${f.color}"></span>
+                                <span class="chat-fabric-name">${f.name}</span>
+                                <button class="btn btn-xs btn-gold">Select</button>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        }
+
+        // 4. Doorstep Visit & Sizing Widget
+        if (actions.some(a => ['request_measurements', 'schedule_technician'].includes(a.type)) || content.toLowerCase().includes('technician') || content.toLowerCase().includes('measurement')) {
+            widgetHTML += `
+                <div class="chat-widget-card">
+                    <div class="chat-widget-title"><i class="fa-solid fa-tape text-gold"></i> Doorstep Tailor & Fitting Options:</div>
+                    <p class="text-xs text-muted mt-1">Select your preferred fitting service below:</p>
+                    <div class="chat-widget-actions mt-2">
+                        <button class="btn btn-xs btn-gold" onclick="openCustomizerDrawer()"><i class="fa-solid fa-sliders"></i> Open Sizing Drawer</button>
+                        <button class="btn btn-xs btn-outline" onclick="quickScheduleVisit('Mumbai')">🏠 Visit (Mumbai)</button>
+                        <button class="btn btn-xs btn-outline" onclick="quickScheduleVisit('Bangalore')">🏠 Visit (Bangalore)</button>
+                        <button class="btn btn-xs btn-outline" onclick="quickScheduleVisit('Gurgaon')">🏠 Visit (Gurgaon)</button>
+                    </div>
+                </div>
+            `;
+        }
+
+        // 5. Cart / Checkout Widget
+        if (actions.some(a => ['add_to_bag', 'open_cart'].includes(a.type)) || (state.cart.length > 0 && content.toLowerCase().includes('bag'))) {
+            widgetHTML += `
+                <div class="chat-widget-card gold-border">
+                    <div class="chat-widget-title"><i class="fa-solid fa-bag-shopping text-gold"></i> Shopping Bag (${state.cart.length} items):</div>
+                    <div class="mt-2">
+                        <button class="btn btn-gold btn-sm w-full" onclick="toggleDrawer('cart-drawer', true)"><i class="fa-solid fa-cart-shopping"></i> Review Bag & Checkout</button>
+                    </div>
+                </div>
+            `;
+        }
+    }
+
+    msgDiv.innerHTML = `
+        <div class="message-bubble">
+            ${parsedContent}
+            ${widgetHTML}
+        </div>
+    `;
     container.appendChild(msgDiv);
     container.scrollTop = container.scrollHeight;
 }
