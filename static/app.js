@@ -870,26 +870,26 @@ function quickScheduleVisit(city) {
 }
 
 const STOCK_OPTION_IMAGES = {
-    'office formal': 'https://images.unsplash.com/photo-1507679799987-c73779587ccf?auto=format&fit=crop&w=400&q=80',
-    'office': 'https://images.unsplash.com/photo-1507679799987-c73779587ccf?auto=format&fit=crop&w=400&q=80',
-    'wedding reception': 'https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&w=400&q=80',
-    'wedding': 'https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&w=400&q=80',
-    'casual weekend': 'https://images.unsplash.com/photo-1479064555552-3ef4979f8908?auto=format&fit=crop&w=400&q=80',
-    'casual': 'https://images.unsplash.com/photo-1479064555552-3ef4979f8908?auto=format&fit=crop&w=400&q=80',
-    'party wear': 'https://images.unsplash.com/photo-1593030761757-71fae45fa0e7?auto=format&fit=crop&w=400&q=80',
-    'party': 'https://images.unsplash.com/photo-1593030761757-71fae45fa0e7?auto=format&fit=crop&w=400&q=80',
-    'travel / resort': 'https://images.unsplash.com/photo-1506152983158-b4a74a01c721?auto=format&fit=crop&w=400&q=80',
-    'travel': 'https://images.unsplash.com/photo-1506152983158-b4a74a01c721?auto=format&fit=crop&w=400&q=80',
-    'superfine wool': 'https://images.unsplash.com/photo-1584100936595-c0654b55a2e2?auto=format&fit=crop&w=400&q=80',
-    'italian cashmere': 'https://images.unsplash.com/photo-1604014237800-1c9102c219da?auto=format&fit=crop&w=400&q=80',
-    'summer linen': 'https://images.unsplash.com/photo-1528459801416-a9e53bbf4e17?auto=format&fit=crop&w=400&q=80',
-    'pure cotton': 'https://images.unsplash.com/photo-1596755094514-f87e34085b2c?auto=format&fit=crop&w=400&q=80',
-    'view suits': 'https://images.unsplash.com/photo-1594938298603-c8148c4dae35?auto=format&fit=crop&w=400&q=80',
-    'view shirts': 'https://images.unsplash.com/photo-1602810318383-e386cc2a3ccf?auto=format&fit=crop&w=400&q=80',
-    'view ethnic wear': 'https://images.unsplash.com/photo-1583391733956-6c78276477e2?auto=format&fit=crop&w=400&q=80',
-    'view accessories': 'https://images.unsplash.com/photo-1589756823695-278bc923f962?auto=format&fit=crop&w=400&q=80',
-    'slim fit': 'https://images.unsplash.com/photo-1594938298603-c8148c4dae35?auto=format&fit=crop&w=400&q=80',
-    'regular fit': 'https://images.unsplash.com/photo-1507679799987-c73779587ccf?auto=format&fit=crop&w=400&q=80'
+    'office formal': '/static/assets/occasion_office.jpg',
+    'office': '/static/assets/occasion_office.jpg',
+    'wedding reception': '/static/assets/occasion_wedding.jpg',
+    'wedding': '/static/assets/occasion_wedding.jpg',
+    'casual weekend': '/static/assets/occasion_casual.jpg',
+    'casual': '/static/assets/occasion_casual.jpg',
+    'party wear': '/static/assets/occasion_party.jpg',
+    'party': '/static/assets/occasion_party.jpg',
+    'travel / resort': '/static/assets/occasion_travel.jpg',
+    'travel': '/static/assets/occasion_travel.jpg',
+    'superfine wool': '/static/assets/fabric_soft_stone.jpg',
+    'italian cashmere': '/static/assets/fabric_pearl.jpg',
+    'summer linen': '/static/assets/fabric_cobalt.jpg',
+    'pure cotton': '/static/assets/fabric_burgundy.jpg',
+    'view suits': '/static/assets/suit_silver_slate.jpg',
+    'view shirts': '/static/assets/suit_pearl_white.jpg',
+    'view ethnic wear': '/static/assets/suit_soot_black.jpg',
+    'view accessories': '/static/assets/accessory_tie.jpg',
+    'slim fit': '/static/assets/suit_silver_slate.jpg',
+    'regular fit': '/static/assets/suit_pearl_white.jpg'
 };
 
 function addMessageToChat(role, content, actions = []) {
@@ -935,7 +935,7 @@ function addMessageToChat(role, content, actions = []) {
                     <div class="chat-visual-options-grid">
                         ${optionsList.map(opt => {
                             const key = opt.toLowerCase();
-                            const imgUrl = STOCK_OPTION_IMAGES[key] || 'https://images.unsplash.com/photo-1594938298603-c8148c4dae35?auto=format&fit=crop&w=400&q=80';
+                            const imgUrl = STOCK_OPTION_IMAGES[key] || '/static/assets/suit_silver_slate.jpg';
                             return `
                                 <div class="chat-visual-option-card" onclick="sendSuggestion('${opt.replace(/'/g, "\\'")}')">
                                     <div class="chat-visual-option-img" style="background-image: url('${imgUrl}')"></div>
@@ -995,10 +995,10 @@ function addMessageToChat(role, content, actions = []) {
         // 3. Visual Fabric Swatch Gallery Cards
         if (content.toLowerCase().includes('fabric') || actions.some(a => a.type === 'customize_fabric')) {
             const fabrics = [
-                { name: "D 963/1 - Suit Soft stone", img: "https://images.unsplash.com/photo-1584100936595-c0654b55a2e2?auto=format&fit=crop&w=400&q=80" },
-                { name: "AC 103/1 - Suit Pearl", img: "https://images.unsplash.com/photo-1604014237800-1c9102c219da?auto=format&fit=crop&w=400&q=80" },
-                { name: "AW 268/1 - Jacket Cobalt blue", img: "https://images.unsplash.com/photo-1528459801416-a9e53bbf4e17?auto=format&fit=crop&w=400&q=80" },
-                { name: "V 712/3 - Bandhgala Burgundy", img: "https://images.unsplash.com/photo-1596755094514-f87e34085b2c?auto=format&fit=crop&w=400&q=80" }
+                { name: "D 963/1 - Suit Soft stone", img: "/static/assets/fabric_soft_stone.jpg" },
+                { name: "AC 103/1 - Suit Pearl", img: "/static/assets/fabric_pearl.jpg" },
+                { name: "AW 268/1 - Jacket Cobalt blue", img: "/static/assets/fabric_cobalt.jpg" },
+                { name: "V 712/3 - Bandhgala Burgundy", img: "/static/assets/fabric_burgundy.jpg" }
             ];
             widgetHTML += `
                 <div class="chat-widget-section">
