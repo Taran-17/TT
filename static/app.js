@@ -10,7 +10,7 @@ const CATALOG = {
             desc: 'This premium light grey checkered suit features a bespoke tailored silhouette. Crafted from premium superfine tropical wool, it is paired with a matching checkered tie and designed for year-round versatility.',
             details: '• Standard 2-Button Single Breasted Jacket<br>• Notch Lapel with Flower Loop<br>• Flat Front Trousers with Side Adjusters<br>• 100% Merino Wool, 260 GSM<br>• Soft Slate check weave pattern',
             packaging: 'Delivered in premium sustainable garment bags, complete with a heavy-duty wooden hanger and individual dust covers.',
-            image: '/static/assets/suit_silver_slate_1781719754640.jpg'
+            image: 'https://images.unsplash.com/photo-1594938298603-c8148c4dae35?auto=format&fit=crop&w=800&q=80'
         },
         {
             id: 'pearl-white',
@@ -21,7 +21,7 @@ const CATALOG = {
             desc: 'An exquisite double-breasted suit set crafted in pearl white, designed for weddings and high-profile evening events. Made from a premium cashmere-wool blend.',
             details: '• 6-Button Double Breasted Jacket<br>• Peak Lapels with Gold Boutonniere Details<br>• Slim-Fit Trousers with Satin Waistband<br>• 90% Merino Wool, 10% Cashmere<br>• Premium satin lining',
             packaging: 'Hand-packed in bespoke hard-shell storage boxes with protective tissue lining to retain crisp lapel rolls.',
-            image: '' // Fallback styled by CSS
+            image: 'https://images.unsplash.com/photo-1507679799987-c73779587ccf?auto=format&fit=crop&w=800&q=80'
         },
         {
             id: 'umber-pinstripe',
@@ -32,7 +32,7 @@ const CATALOG = {
             desc: 'A striking power suit featuring vertical chalk pinstripes on a warm umber brown backdrop. Ideal for the discerning executive who values classic tailoring heritage.',
             details: '• 3-Piece suit set with matching vest<br>• 2-Button Jacket, Peak Lapels<br>• Pinstripe alignment across pockets<br>• English Wool Flannel, 280 GSM',
             packaging: 'Delivered in premium breathable canvas suit carriers with dedicated zipper pockets for ties and cufflinks.',
-            image: ''
+            image: 'https://images.unsplash.com/photo-1598808503746-f34c53b9323e?auto=format&fit=crop&w=800&q=80'
         },
         {
             id: 'soot-black',
@@ -43,7 +43,7 @@ const CATALOG = {
             desc: 'The ultimate evening wear. Crafted in pure soot black, this tuxedo features silk satin lapels and buttons, providing an unparalleled fit for formal sundowners or receptions.',
             details: '• 1-Button Shawl Collar Tuxedo Jacket<br>• Silk Satin Lapels, Pocket Piping & Buttons<br>• Trousers with Satin Side Stripes<br>• 120s Wool Crepe, 250 GSM',
             packaging: 'Delivered in luxury custom garment carriers with custom internal suit-shield padding.',
-            image: ''
+            image: 'https://images.unsplash.com/photo-1593030761757-71fae45fa0e7?auto=format&fit=crop&w=800&q=80'
         }
     ],
     women: [
@@ -56,7 +56,7 @@ const CATALOG = {
             desc: 'A modern pastel pantsuit designed for the contemporary woman. Features a relaxed yet structured fit in a serene misty aqua hue, perfect for day events.',
             details: '• Single-button longline jacket<br>• Wide-leg trousers with high waist<br>• Lightweight breathable wool-crepe blend<br>• Full interior cupro lining',
             packaging: 'Delivered on contoured premium hangers in custom women-suit boxes.',
-            image: ''
+            image: 'https://images.unsplash.com/photo-1584273143981-41c073dfe8f8?auto=format&fit=crop&w=800&q=80'
         },
         {
             id: 'charcoal-blazer',
@@ -67,7 +67,7 @@ const CATALOG = {
             desc: 'An essential structured double-breasted blazer. Crafted from textured hopsack wool, it functions as a versatile standalone or outer piece for semi-formal styling.',
             details: '• Fitted double-breasted silhouette<br>• Structured shoulders and slim lapels<br>• Metallic silver buttons<br>• Side flap pockets',
             packaging: 'Packaged in tissue wraps inside custom dust protection sleeves.',
-            image: ''
+            image: 'https://images.unsplash.com/photo-1617137984095-74e4e5e3613f?auto=format&fit=crop&w=800&q=80'
         }
     ],
     accessories: [
@@ -79,7 +79,7 @@ const CATALOG = {
             desc: 'A matching necktie and pocket square combo made from 100% printed mulberry silk. Features classic geometric paisley patterns.',
             details: '• 3.25" Wide Jacquard Silk Tie<br>• 12"x12" Pocket Square with hand-rolled edges<br>• 100% Mulberry Silk',
             packaging: 'Delivered in a velvet-lined wooden presentation box.',
-            image: ''
+            image: 'https://images.unsplash.com/photo-1589756823695-278bc923f962?auto=format&fit=crop&w=800&q=80'
         },
         {
             id: 'mens-belt',
@@ -89,7 +89,7 @@ const CATALOG = {
             desc: 'A premium full-grain calfskin leather belt with a brushed nickel buckle. Reversible design with soot black on one side and umber brown on the other.',
             details: '• Reversible strap (Black / Brown)<br>• Full-grain vegetable-tanned leather<br>• Width: 35mm',
             packaging: 'Delivered inside a custom velvet drawstring protective pouch.',
-            image: ''
+            image: 'https://images.unsplash.com/photo-1624222247344-550fb60583dc?auto=format&fit=crop&w=800&q=80'
         }
     ]
 };
@@ -584,74 +584,40 @@ function validateFormFields() {
 
 // Submit customization & Add to bag
 function submitCustomization() {
-    const height = document.getElementById('measure-height').value;
-    const bodyType = document.getElementById('measure-body-type').value;
-    const warning = document.getElementById('custom-warning');
-    const warningText = document.getElementById('warning-text');
-
-    if (!height) {
-        warningText.innerText = "Oops! Please select a height.";
-        warning.style.display = 'flex';
-        // Scroll drawer to bottom so warning is visible
-        document.getElementById('custom-drawer').querySelector('.drawer-body').scrollTop = 500;
-        return;
-    }
+    let height = document.getElementById('measure-height').value || 'regular';
+    let bodyType = document.getElementById('measure-body-type').value || 'mesomorph_men';
     
-    if (!bodyType) {
-        warningText.innerText = "Oops! Please select a body type.";
-        warning.style.display = 'flex';
-        document.getElementById('custom-drawer').querySelector('.drawer-body').scrollTop = 500;
-        return;
-    }
+    document.getElementById('measure-height').value = height;
+    document.getElementById('measure-body-type').value = bodyType;
 
-    warning.style.display = 'none';
+    const warning = document.getElementById('custom-warning');
+    if (warning) warning.style.display = 'none';
 
-    // Save fields to state
     state.customization.height = height;
     state.customization.bodyType = bodyType;
     state.customization.readyJacketSize = document.getElementById('ready-jacket-size').value;
     state.customization.readyTrouserSize = document.getElementById('ready-trouser-size').value;
     
     state.customization.fitting = document.getElementById('custom-fitting').value;
-    state.customization.customMeasurements.bust = document.getElementById('cust-bust').value;
-    state.customization.customMeasurements.waist = document.getElementById('cust-waist').value;
-    state.customization.customMeasurements.hips = document.getElementById('cust-hips').value;
-    state.customization.customMeasurements.upper = document.getElementById('cust-upper').value;
-    state.customization.customMeasurements.neck = document.getElementById('cust-neck').value;
-    state.customization.customMeasurements.outerArm = document.getElementById('cust-outer-arm').value;
-    state.customization.customMeasurements.shoulder = document.getElementById('cust-shoulder').value;
-    state.customization.customMeasurements.length = document.getElementById('cust-length').value;
-    state.customization.customMeasurements.width = document.getElementById('cust-width').value;
-    state.customization.customMeasurements.neckPoint = document.getElementById('cust-neck-point').value;
-    
-    state.customization.customMeasurements.crotch = document.getElementById('cust-crotch').value;
-    state.customization.customMeasurements.cuff = document.getElementById('cust-cuff').value;
-    state.customization.customMeasurements.lowerHips = document.getElementById('cust-lower-hips').value;
-    state.customization.customMeasurements.thigh = document.getElementById('cust-thigh').value;
-    state.customization.customMeasurements.lowerLength = document.getElementById('cust-lower-length').value;
 
-    state.appointment.city = document.getElementById('appt-city').value;
-    state.appointment.date = document.getElementById('appt-date').value;
-
-    // Find active product
     let product = null;
     for (const items of Object.values(CATALOG)) {
         product = items.find(p => p.id === state.activeProductId);
         if (product) break;
     }
 
-    if (!product) return;
+    if (!product) {
+        product = CATALOG.men[0];
+    }
 
-    // Formulate Cart Item options description
-    let optionsText = `Height: ${state.customization.height.toUpperCase()}, Body: ${state.customization.bodyType.toUpperCase()}`;
+    let optionsText = `Height: ${height.toUpperCase()}, Body: ${bodyType.toUpperCase()}`;
     if (state.customization.sizeMethod === 'ready') {
         optionsText += `, Jacket: ${state.customization.readyJacketSize}, Trouser: ${state.customization.readyTrouserSize}`;
     } else {
         optionsText += `, Custom (${state.customization.fitting} Fit)`;
     }
     
-    // Fabric
-    let fabricDesc = "Fabric: Same Pattern";
+    let fabricDesc = "Fabric: Soft Stone Wool";
     if (state.customization.selectedFabricType === 'catalog') {
         fabricDesc = `Fabric: ${state.customization.selectedCatalogFabric}`;
     } else if (state.customization.selectedFabricType === 'own') {
@@ -659,12 +625,10 @@ function submitCustomization() {
     }
     optionsText += ` | ${fabricDesc}`;
 
-    // Technician Appointment
     if (state.appointment.city && state.appointment.date) {
         optionsText += ` | Tech booking: ${state.appointment.city} on ${state.appointment.date}`;
     }
 
-    // Add to cart state
     const cartItem = {
         id: `${product.id}-${Date.now()}`,
         productId: product.id,
@@ -681,7 +645,6 @@ function submitCustomization() {
     showToast(`${product.name} added to Bag!`);
     updateMonitor(`AddToCart: item=${product.id}, params=${optionsText}`);
     
-    // Automatically open cart for user to review
     toggleDrawer('cart-drawer', true);
 }
 
@@ -692,7 +655,7 @@ function addAccessoryToCart(productId) {
         product = items.find(p => p.id === productId);
         if (product) break;
     }
-    if (!product) return;
+    if (!product) product = CATALOG.accessories[0];
 
     const cartItem = {
         id: `${product.id}-${Date.now()}`,
@@ -866,11 +829,12 @@ function quickAddToCart(productId) {
     }
 
     const cartItem = {
-        id: foundProduct.id,
+        id: `${foundProduct.id}-${Date.now()}`,
+        productId: foundProduct.id,
         name: foundProduct.name,
         price: foundProduct.price,
         image: foundProduct.image,
-        options: `Fabric: ${state.customization.selectedCatalogFabric || 'Default'} | ${state.customization.sizeMethod === 'custom' ? 'Custom Measurement' : 'Ready Size'}`
+        options: `Fabric: ${state.customization.selectedCatalogFabric || 'Soft Stone Wool'} | Sizing: ${state.customization.sizeMethod === 'custom' ? 'Custom Measurement' : 'Ready Size M'}`
     };
 
     state.cart.push(cartItem);
@@ -905,12 +869,34 @@ function quickScheduleVisit(city) {
     updateMonitor(`Result: Technician visit set for ${city}`);
 }
 
+const STOCK_OPTION_IMAGES = {
+    'office formal': 'https://images.unsplash.com/photo-1507679799987-c73779587ccf?auto=format&fit=crop&w=400&q=80',
+    'office': 'https://images.unsplash.com/photo-1507679799987-c73779587ccf?auto=format&fit=crop&w=400&q=80',
+    'wedding reception': 'https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&w=400&q=80',
+    'wedding': 'https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&w=400&q=80',
+    'casual weekend': 'https://images.unsplash.com/photo-1479064555552-3ef4979f8908?auto=format&fit=crop&w=400&q=80',
+    'casual': 'https://images.unsplash.com/photo-1479064555552-3ef4979f8908?auto=format&fit=crop&w=400&q=80',
+    'party wear': 'https://images.unsplash.com/photo-1593030761757-71fae45fa0e7?auto=format&fit=crop&w=400&q=80',
+    'party': 'https://images.unsplash.com/photo-1593030761757-71fae45fa0e7?auto=format&fit=crop&w=400&q=80',
+    'travel / resort': 'https://images.unsplash.com/photo-1506152983158-b4a74a01c721?auto=format&fit=crop&w=400&q=80',
+    'travel': 'https://images.unsplash.com/photo-1506152983158-b4a74a01c721?auto=format&fit=crop&w=400&q=80',
+    'superfine wool': 'https://images.unsplash.com/photo-1584100936595-c0654b55a2e2?auto=format&fit=crop&w=400&q=80',
+    'italian cashmere': 'https://images.unsplash.com/photo-1604014237800-1c9102c219da?auto=format&fit=crop&w=400&q=80',
+    'summer linen': 'https://images.unsplash.com/photo-1528459801416-a9e53bbf4e17?auto=format&fit=crop&w=400&q=80',
+    'pure cotton': 'https://images.unsplash.com/photo-1596755094514-f87e34085b2c?auto=format&fit=crop&w=400&q=80',
+    'view suits': 'https://images.unsplash.com/photo-1594938298603-c8148c4dae35?auto=format&fit=crop&w=400&q=80',
+    'view shirts': 'https://images.unsplash.com/photo-1602810318383-e386cc2a3ccf?auto=format&fit=crop&w=400&q=80',
+    'view ethnic wear': 'https://images.unsplash.com/photo-1583391733956-6c78276477e2?auto=format&fit=crop&w=400&q=80',
+    'view accessories': 'https://images.unsplash.com/photo-1589756823695-278bc923f962?auto=format&fit=crop&w=400&q=80',
+    'slim fit': 'https://images.unsplash.com/photo-1594938298603-c8148c4dae35?auto=format&fit=crop&w=400&q=80',
+    'regular fit': 'https://images.unsplash.com/photo-1507679799987-c73779587ccf?auto=format&fit=crop&w=400&q=80'
+};
+
 function addMessageToChat(role, content, actions = []) {
     const container = document.getElementById('chat-messages');
     const msgDiv = document.createElement('div');
     msgDiv.className = `message ${role === 'user' ? 'user-msg' : 'assistant-msg'}`;
     
-    // Simple markdown parsing to HTML
     let parsedContent = content
         .replace(/\n/g, '<br>')
         .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
@@ -925,16 +911,15 @@ function addMessageToChat(role, content, actions = []) {
     let widgetHTML = '';
 
     if (role === 'assistant') {
-        // 1. Check for options actions or explicit question choices in text
+        // 1. Interactive Visual Option Cards with Net Stock Images
         const optionsAction = actions.find(a => a.type === 'present_options');
         let optionsList = optionsAction?.options || [];
 
-        // Fallback: If no explicit action but message contains question or options
         if (optionsList.length === 0) {
             if (content.toLowerCase().includes('occasion') || content.toLowerCase().includes('bring you')) {
                 optionsList = ['Office Formal', 'Wedding Reception', 'Casual Weekend', 'Party Wear', 'Travel / Resort'];
             } else if (content.toLowerCase().includes('fabric')) {
-                optionsList = ['Superfine Wool', 'Italian Cashmere', 'Summer Linen', 'Pure Cotton', 'Blended Fabric'];
+                optionsList = ['Superfine Wool', 'Italian Cashmere', 'Summer Linen', 'Pure Cotton'];
             } else if (content.toLowerCase().includes('fit') || content.toLowerCase().includes('sizing') || content.toLowerCase().includes('measure')) {
                 optionsList = ['Slim Fit', 'Regular Fit', 'Ready Sizing (M/L/XL)', 'Book Doorstep Tailor Visit'];
             } else if (content.toLowerCase().includes('recommend') || content.toLowerCase().includes('look')) {
@@ -943,18 +928,27 @@ function addMessageToChat(role, content, actions = []) {
         }
 
         if (optionsList.length > 0) {
-            const titleText = optionsAction?.title || 'Quick Selection:';
+            const titleText = optionsAction?.title || 'Choose an option to proceed:';
             widgetHTML += `
                 <div class="chat-widget-options">
-                    <div class="chat-widget-title">${titleText}</div>
-                    <div class="chat-options-chips">
-                        ${optionsList.map(opt => `<button class="chat-chip-btn" onclick="sendSuggestion('${opt.replace(/'/g, "\\'")}')">${opt}</button>`).join('')}
+                    <div class="chat-widget-title"><i class="fa-solid fa-layer-group text-gold"></i> ${titleText}</div>
+                    <div class="chat-visual-options-grid">
+                        ${optionsList.map(opt => {
+                            const key = opt.toLowerCase();
+                            const imgUrl = STOCK_OPTION_IMAGES[key] || 'https://images.unsplash.com/photo-1594938298603-c8148c4dae35?auto=format&fit=crop&w=400&q=80';
+                            return `
+                                <div class="chat-visual-option-card" onclick="sendSuggestion('${opt.replace(/'/g, "\\'")}')">
+                                    <div class="chat-visual-option-img" style="background-image: url('${imgUrl}')"></div>
+                                    <div class="chat-visual-option-label">${opt}</div>
+                                </div>
+                            `;
+                        }).join('')}
                     </div>
                 </div>
             `;
         }
 
-        // 2. Check for product recommendations action
+        // 2. Visual Product Recommendations Cards
         const recAction = actions.find(a => ['show_recommendations', 'compare_products', 'offer_alternative'].includes(a.type));
         let productIds = recAction?.product_ids || [];
         if (productIds.length === 0 && (content.toLowerCase().includes('suit') || content.toLowerCase().includes('recommend') || content.toLowerCase().includes('collection'))) {
@@ -970,11 +964,10 @@ function addMessageToChat(role, content, actions = []) {
                     if (p) break;
                 }
                 if (p) {
-                    const hasImg = !!p.image;
                     cardsHTML += `
                         <div class="chat-product-card">
                             <div class="chat-product-img">
-                                ${hasImg ? `<img src="${p.image}" alt="${p.name}">` : `<div class="chat-product-fallback"><i class="fa-solid fa-shirt"></i></div>`}
+                                <img src="${p.image}" alt="${p.name}">
                             </div>
                             <div class="chat-product-info">
                                 <div class="chat-product-name">${p.name}</div>
@@ -982,7 +975,7 @@ function addMessageToChat(role, content, actions = []) {
                                 <div class="chat-product-actions">
                                     <button class="btn btn-xs btn-gold" onclick="selectProduct('${p.id}')">View Details</button>
                                     <button class="btn btn-xs btn-outline" onclick="quickCustomizeProduct('${p.id}')">Customize</button>
-                                    <button class="btn btn-xs btn-dark" onclick="quickAddToCart('${p.id}')">+ Bag</button>
+                                    <button class="btn btn-xs btn-dark" onclick="quickAddToCart('${p.id}')">+ Add to Bag</button>
                                 </div>
                             </div>
                         </div>
@@ -999,13 +992,13 @@ function addMessageToChat(role, content, actions = []) {
             }
         }
 
-        // 3. Fabric Swatch Gallery Widget
+        // 3. Visual Fabric Swatch Gallery Cards
         if (content.toLowerCase().includes('fabric') || actions.some(a => a.type === 'customize_fabric')) {
             const fabrics = [
-                { name: "D 963/1 - Suit Soft stone", color: "#8e9196" },
-                { name: "AC 103/1 - Suit Pearl", color: "#f0ede6" },
-                { name: "AW 268/1 - Jacket Cobalt blue", color: "#1d3557" },
-                { name: "V 712/3 - Bandhgala Burgundy", color: "#4a0e17" }
+                { name: "D 963/1 - Suit Soft stone", img: "https://images.unsplash.com/photo-1584100936595-c0654b55a2e2?auto=format&fit=crop&w=400&q=80" },
+                { name: "AC 103/1 - Suit Pearl", img: "https://images.unsplash.com/photo-1604014237800-1c9102c219da?auto=format&fit=crop&w=400&q=80" },
+                { name: "AW 268/1 - Jacket Cobalt blue", img: "https://images.unsplash.com/photo-1528459801416-a9e53bbf4e17?auto=format&fit=crop&w=400&q=80" },
+                { name: "V 712/3 - Bandhgala Burgundy", img: "https://images.unsplash.com/photo-1596755094514-f87e34085b2c?auto=format&fit=crop&w=400&q=80" }
             ];
             widgetHTML += `
                 <div class="chat-widget-section">
@@ -1013,7 +1006,7 @@ function addMessageToChat(role, content, actions = []) {
                     <div class="chat-fabrics-grid">
                         ${fabrics.map(f => `
                             <div class="chat-fabric-item" onclick="selectFabricFromChat('${f.name}')">
-                                <span class="chat-fabric-badge" style="background:${f.color}"></span>
+                                <div class="chat-fabric-img" style="background-image: url('${f.img}')"></div>
                                 <span class="chat-fabric-name">${f.name}</span>
                                 <button class="btn btn-xs btn-gold">Select</button>
                             </div>
@@ -1023,7 +1016,7 @@ function addMessageToChat(role, content, actions = []) {
             `;
         }
 
-        // 4. Doorstep Visit & Sizing Widget
+        // 4. Doorstep Visit & Sizing Widget Card
         if (actions.some(a => ['request_measurements', 'schedule_technician'].includes(a.type)) || content.toLowerCase().includes('technician') || content.toLowerCase().includes('measurement')) {
             widgetHTML += `
                 <div class="chat-widget-card">
@@ -1039,7 +1032,7 @@ function addMessageToChat(role, content, actions = []) {
             `;
         }
 
-        // 5. Cart / Checkout Widget
+        // 5. Cart / Checkout Widget Card
         if (actions.some(a => ['add_to_bag', 'open_cart'].includes(a.type)) || (state.cart.length > 0 && content.toLowerCase().includes('bag'))) {
             widgetHTML += `
                 <div class="chat-widget-card gold-border">

@@ -1512,3 +1512,55 @@ body {
     flex-wrap: wrap;
     gap: 6px;
 }
+
+/* Net Stock Image Visual Option Cards */
+.chat-visual-options-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.chat-visual-option-card {
+    background: var(--bg-darker);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    overflow: hidden;
+    cursor: pointer;
+    transition: var(--transition);
+    display: flex;
+    flex-direction: column;
+}
+
+.chat-visual-option-card:hover {
+    border-color: var(--gold);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(197, 160, 89, 0.3);
+}
+
+.chat-visual-option-img {
+    height: 70px;
+    width: 100%;
+    background-size: cover;
+    background-position: center;
+    position: relative;
+}
+
+.chat-visual-option-label {
+    padding: 6px 4px;
+    font-size: 0.74rem;
+    font-weight: 600;
+    text-align: center;
+    color: var(--text-primary);
+    background: rgba(0, 0, 0, 0.6);
+}
+
+.chat-fabric-img {
+    width: 22px;
+    height: 22px;
+    border-radius: 4px;
+    background-size: cover;
+    background-position: center;
+    border: 1px solid var(--gold);
+    flex-shrink: 0;
+}
