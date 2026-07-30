@@ -1442,6 +1442,14 @@ body {
     text-overflow: ellipsis;
 }
 
+.chat-product-role {
+    margin-top: 2px;
+    font-size: 0.68rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--gold-hover);
+}
+
 .chat-product-price {
     font-size: 0.8rem;
     color: var(--gold);
@@ -1455,10 +1463,65 @@ body {
     margin-left: 4px;
 }
 
+.chat-product-note {
+    margin-top: 4px;
+    font-size: 0.72rem;
+    line-height: 1.4;
+    color: var(--text-muted);
+}
+
 .chat-product-actions {
     display: flex;
     gap: 4px;
     margin-top: 4px;
+}
+
+.chat-bundle-strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 6px;
+}
+
+.chat-bundle-pill {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 8px 10px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(197, 160, 89, 0.25);
+    min-width: 120px;
+}
+
+.chat-bundle-pill strong {
+    font-size: 0.78rem;
+    color: var(--text-primary);
+}
+
+.chat-bundle-pill span {
+    font-size: 0.68rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.chat-cross-sell-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 6px;
+}
+
+.chat-cross-sell-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 5px 10px;
+    border-radius: 999px;
+    background: rgba(197, 160, 89, 0.08);
+    border: 1px solid rgba(197, 160, 89, 0.2);
+    color: var(--text-primary);
+    font-size: 0.72rem;
 }
 
 .btn-xs {

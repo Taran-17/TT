@@ -371,8 +371,11 @@
                         </div>
                     </div>
                 </div>
-                <!-- API Key Control -->
-                <div class="api-key-container">
+                <!-- Voice & API Key Controls -->
+                <div class="api-key-container" style="display: flex; gap: 6px; align-items: center;">
+                    <button class="api-key-btn" id="tts-toggle-btn" onclick="toggleMute()" title="Toggle Agent Voice Output">
+                        <i class="fa-solid fa-volume-high text-gold" id="tts-icon"></i> <span id="tts-btn-text">Voice ON</span>
+                    </button>
                     <button class="api-key-btn" onclick="toggleApiKeyInput()">
                         <i class="fa-solid fa-key"></i> <span id="key-btn-text">Groq API Key</span>
                     </button>
@@ -404,7 +407,7 @@
                     <div class="message-bubble">
                         Welcome to TechTailor! I am your AI Bespoke Assistant. I can help you search, select fabric, customized sizes, and schedule tailors.
                         <br><br>
-                        <strong>How I can control the website:</strong> If you tell me what you want, I will automatically navigate pages, customize sizes, choose fabric, or schedule appointments on the site for you!
+                        <strong>How I can control the website:</strong> If you tell me what you want, I will automatically navigate pages, recommend complete outfit combinations, explain why they fit, customize sizes, choose fabric, or schedule appointments on the site for you!
                         <br><br>
                         <em>Please check that your Groq API key is set in the top right to start chatting!</em>
                     </div>
@@ -425,8 +428,8 @@
             <div class="chat-input-area">
                 <!-- Suggestion tags -->
                 <div class="suggestion-tags">
-                    <button onclick="sendSuggestion('Show me men\'s suits')">Show Men's Suits</button>
-                    <button onclick="sendSuggestion('Configure a Silver Slate suit: regular size M, height regular, and add to bag')">Fast Customize</button>
+                    <button onclick="sendSuggestion('Show me complete office outfit options with matching accessories')">Show Complete Office Looks</button>
+                    <button onclick="sendSuggestion('Suggest a wedding outfit with matching tie, belt, and why it works')">Wedding Outfit Bundle</button>
                     <button onclick="sendSuggestion('Can I book a home measurement in Bangalore for this Friday?')">Book Tailor Appointment</button>
                 </div>
                 <div class="input-row">

@@ -51,39 +51,54 @@ class ChatResponse(BaseModel):
 
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest, x_groq_api_key: Optional[str] = Header(None)):
-    if x_groq_api_key:
-        os.environ["GROQ_API_KEY"] = x_groq_api_key
+    try:
+        if x_groq_api_key:
+            os.environ["GROQ_API_KEY"] = x_groq_api_key
 
-    session_id = request.session_id or "default"
-    if request.messages:
-        last_message = request.messages[-1]
-        if last_message.role == "user":
-            record_message(session_id, last_message.role, last_message.content)
+        session_id = request.session_id or "default"
+        if request.messages:
+            last_message = request.messages[-1]
+            if last_message.role == "user":
+                try:
+                    record_message(session_id, last_message.role, last_message.content)
+                except Exception as e:
+                    print("Warning: Failed to record user message:", e)
 
-    state = {
-        "session_id": session_id,
-        "messages": [msg.model_dump() for msg in request.messages],
-        "system_prompt": request.system_prompt,
-    }
+        state = {
+            "session_id": session_id,
+            "messages": [msg.model_dump() for msg in request.messages],
+            "system_prompt": request.system_prompt,
+        }
 
-    result = AGENT_GRAPH.invoke(state)
-    if result.get("response"):
-        record_message(
-            session_id,
-            "assistant",
-            result.get("response", ""),
+        result = AGENT_GRAPH.invoke(state)
+        if result.get("response"):
+            try:
+                record_message(
+                    session_id,
+                    "assistant",
+                    result.get("response", ""),
+                    workflow_id=result.get("workflow_id"),
+                    intent_bucket=result.get("intent_bucket"),
+                )
+            except Exception as e:
+                print("Warning: Failed to record assistant message:", e)
+
+        return ChatResponse(
+            response=result.get("response", ""),
+            actions=result.get("actions", []),
             workflow_id=result.get("workflow_id"),
+            workflow_title=result.get("workflow_title"),
             intent_bucket=result.get("intent_bucket"),
+            workflow_summary=result.get("workflow_summary"),
+            error=result.get("error"),
         )
-    return ChatResponse(
-        response=result.get("response", ""),
-        actions=result.get("actions", []),
-        workflow_id=result.get("workflow_id"),
-        workflow_title=result.get("workflow_title"),
-        intent_bucket=result.get("intent_bucket"),
-        workflow_summary=result.get("workflow_summary"),
-        error=result.get("error"),
-    )
+    except Exception as exc:
+        print("Error during /api/chat execution:", exc)
+        return ChatResponse(
+            response="I encountered an issue processing your request. Please check your Groq API Key or try again.",
+            actions=[],
+            error=str(exc),
+        )
 
 
 @app.get("/api/workflows")

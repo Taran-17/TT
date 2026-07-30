@@ -747,6 +747,70 @@ function checkoutMock() {
 }
 
 // ==========================================================================
+// ==========================================================================
+// SPEECH SYNTHESIS ENGINE (AGENT VOICE OUTPUT)
+// ==========================================================================
+let isMuted = false;
+
+if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+    window.speechSynthesis.onvoiceschanged = () => {
+        window.speechSynthesis.getVoices();
+    };
+}
+
+function toggleMute() {
+    isMuted = !isMuted;
+    const btnText = document.getElementById('tts-btn-text');
+    const icon = document.getElementById('tts-icon');
+    if (isMuted) {
+        if (window.speechSynthesis) window.speechSynthesis.cancel();
+        if (btnText) btnText.innerText = "Voice OFF";
+        if (icon) icon.className = "fa-solid fa-volume-xmark text-muted";
+        showToast("Agent voice muted");
+    } else {
+        if (btnText) btnText.innerText = "Voice ON";
+        if (icon) icon.className = "fa-solid fa-volume-high text-gold";
+        showToast("Agent voice enabled");
+        speakText("Agent voice enabled. I am ready to guide you.");
+    }
+}
+
+function speakText(text) {
+    if (isMuted || typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+    if (!text) return;
+
+    try {
+        window.speechSynthesis.cancel();
+
+        let cleanText = text
+            .replace(/<[^>]*>/g, ' ')
+            .replace(/[*_`#~]/g, '')
+            .replace(/https?:\/\/\S+/g, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+
+        if (!cleanText) return;
+
+        const utterance = new SpeechSynthesisUtterance(cleanText);
+        utterance.rate = 1.0;
+        utterance.pitch = 1.0;
+
+        const voices = window.speechSynthesis.getVoices();
+        const preferredVoice = voices.find(v => 
+            (v.lang.startsWith('en') && (v.name.includes('Natural') || v.name.includes('Google') || v.name.includes('Samantha') || v.name.includes('Karen') || v.name.includes('Daniel') || v.name.includes('Arthur')))
+        ) || voices.find(v => v.lang.startsWith('en'));
+
+        if (preferredVoice) {
+            utterance.voice = preferredVoice;
+        }
+
+        window.speechSynthesis.speak(utterance);
+    } catch (err) {
+        console.error("Speech synthesis error:", err);
+    }
+}
+
+// ==========================================================================
 // CONCIERGE CHAT LOGIC (AGENT INTEGRATION)
 // ==========================================================================
 async function sendMessage() {
@@ -792,6 +856,9 @@ async function sendMessage() {
             : data.response;
         addMessageToChat('assistant', assistantContent, data.actions || []);
         state.chatHistory.push({ role: 'assistant', content: assistantContent });
+
+        // Speak the assistant's response so agent is never mute!
+        speakText(assistantContent);
 
         // Process any returned structured actions
         if (data.actions && data.actions.length > 0) {
@@ -840,14 +907,20 @@ function quickAddToCart(productId) {
     state.cart.push(cartItem);
     updateCartUI();
     showToast(`Added ${foundProduct.name} to Shopping Bag!`);
+    speakText(`I have added ${foundProduct.name} to your Shopping Bag.`);
     toggleDrawer('cart-drawer', true);
     updateMonitor(`Result: Added '${foundProduct.name}' to Bag directly from Chat Widget`);
 }
 
 function quickCustomizeProduct(productId) {
     selectProduct(productId);
-    openCustomizerDrawer();
-    showToast("Opened Customization & Sizing panel!");
+    let foundProduct = null;
+    for (const [cat, items] of Object.entries(CATALOG)) {
+        foundProduct = items.find(p => p.id === productId);
+        if (foundProduct) break;
+    }
+    const productName = foundProduct ? foundProduct.name : productId;
+    sendSuggestion(`I would like to customize options for ${productName}`);
 }
 
 function selectFabricFromChat(fabricName) {
@@ -859,13 +932,17 @@ function selectFabricFromChat(fabricName) {
 }
 
 function quickScheduleVisit(city) {
-    openCustomizerDrawer();
-    expandAppointmentSection(true);
-    document.getElementById('appt-city').value = city;
+    state.appointment.city = city;
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
-    document.getElementById('appt-date').value = tomorrow.toISOString().split('T')[0];
+    const dateStr = tomorrow.toISOString().split('T')[0];
+    state.appointment.date = dateStr;
+    const elCity = document.getElementById('appt-city');
+    if (elCity) elCity.value = city;
+    const elDate = document.getElementById('appt-date');
+    if (elDate) elDate.value = dateStr;
     showToast(`Scheduled Technician visit in ${city}!`);
+    speakText(`Scheduled technician visit in ${city} for tomorrow.`);
     updateMonitor(`Result: Technician visit set for ${city}`);
 }
 
@@ -891,6 +968,14 @@ const STOCK_OPTION_IMAGES = {
     'slim fit': '/static/assets/suit_silver_slate.jpg',
     'regular fit': '/static/assets/suit_pearl_white.jpg'
 };
+
+function findCatalogProduct(productId) {
+    for (const items of Object.values(CATALOG)) {
+        const match = items.find(x => x.id === productId);
+        if (match) return match;
+    }
+    return null;
+}
 
 function addMessageToChat(role, content, actions = []) {
     const container = document.getElementById('chat-messages');
@@ -951,19 +1036,69 @@ function addMessageToChat(role, content, actions = []) {
         // 2. Visual Product Recommendations Cards
         const recAction = actions.find(a => ['show_recommendations', 'compare_products', 'offer_alternative'].includes(a.type));
         let productIds = recAction?.product_ids || [];
-        if (productIds.length === 0 && (content.toLowerCase().includes('suit') || content.toLowerCase().includes('recommend') || content.toLowerCase().includes('collection'))) {
-            productIds = ['silver-slate', 'pearl-white', 'umber-pinstripe'];
+        const lowerContent = content.toLowerCase();
+        if (productIds.length === 0 && (lowerContent.includes('wedding') || lowerContent.includes('groom'))) {
+            productIds = ['pearl-white', 'printed-tie-combo', 'mens-belt'];
+        } else if (productIds.length === 0 && (lowerContent.includes('office') || lowerContent.includes('business') || lowerContent.includes('interview'))) {
+            productIds = ['silver-slate', 'printed-tie-combo', 'mens-belt'];
+        } else if (productIds.length === 0 && (lowerContent.includes('black tie') || lowerContent.includes('tuxedo') || lowerContent.includes('evening'))) {
+            productIds = ['soot-black', 'printed-tie-combo', 'mens-belt'];
+        } else if (productIds.length === 0 && (lowerContent.includes('recommend') || lowerContent.includes('look') || lowerContent.includes('collection') || lowerContent.includes('suit'))) {
+            productIds = ['silver-slate', 'umber-pinstripe', 'printed-tie-combo'];
         }
 
         if (productIds.length > 0) {
             let cardsHTML = '';
+            const bundleItems = Array.isArray(recAction?.bundle_items) ? recAction.bundle_items : [];
+            const crossSells = Array.isArray(recAction?.cross_sells) ? recAction.cross_sells : [];
+            const recommendationTitle = recAction?.title || 'Recommended outfit combination';
+            const recommendationReason = recAction?.reason || '';
+
+            if (recommendationReason) {
+                widgetHTML += `
+                    <div class="chat-widget-card gold-border">
+                        <div class="chat-widget-title"><i class="fa-solid fa-bullseye text-gold"></i> Why this combination works</div>
+                        <p class="text-sm" style="line-height: 1.6; margin-top: 6px;">${recommendationReason}</p>
+                    </div>
+                `;
+            }
+
+            if (bundleItems.length > 0) {
+                widgetHTML += `
+                    <div class="chat-widget-card">
+                        <div class="chat-widget-title"><i class="fa-solid fa-layer-group text-gold"></i> ${recommendationTitle}</div>
+                        <div class="chat-bundle-strip">
+                            ${bundleItems.map(item => {
+                                const product = findCatalogProduct(item.product_id);
+                                const label = product ? product.name : item.product_id;
+                                const role = item.role || 'supporting piece';
+                                return `
+                                    <div class="chat-bundle-pill">
+                                        <strong>${label}</strong>
+                                        <span>${role}</span>
+                                    </div>
+                                `;
+                            }).join('')}
+                        </div>
+                    </div>
+                `;
+            }
+
+            if (crossSells.length > 0) {
+                widgetHTML += `
+                    <div class="chat-widget-card">
+                        <div class="chat-widget-title"><i class="fa-solid fa-bag-shopping text-gold"></i> Matching add-ons</div>
+                        <div class="chat-cross-sell-list">
+                            ${crossSells.map(item => `<span class="chat-cross-sell-chip">${item}</span>`).join('')}
+                        </div>
+                    </div>
+                `;
+            }
+
             productIds.forEach(id => {
-                let p = null;
-                for (const items of Object.values(CATALOG)) {
-                    p = items.find(x => x.id === id);
-                    if (p) break;
-                }
+                const p = findCatalogProduct(id);
                 if (p) {
+                    const bundleMeta = bundleItems.find(item => item.product_id === id);
                     cardsHTML += `
                         <div class="chat-product-card">
                             <div class="chat-product-img">
@@ -971,7 +1106,9 @@ function addMessageToChat(role, content, actions = []) {
                             </div>
                             <div class="chat-product-info">
                                 <div class="chat-product-name">${p.name}</div>
+                                ${bundleMeta?.role ? `<div class="chat-product-role">${bundleMeta.role}</div>` : ''}
                                 <div class="chat-product-price">₹ ${p.price.toLocaleString()} <span class="chat-product-strike">₹ ${p.priceStrike.toLocaleString()}</span></div>
+                                ${bundleMeta?.reason ? `<div class="chat-product-note">${bundleMeta.reason}</div>` : ''}
                                 <div class="chat-product-actions">
                                     <button class="btn btn-xs btn-gold" onclick="selectProduct('${p.id}')">View Details</button>
                                     <button class="btn btn-xs btn-outline" onclick="quickCustomizeProduct('${p.id}')">Customize</button>
@@ -985,7 +1122,7 @@ function addMessageToChat(role, content, actions = []) {
             if (cardsHTML) {
                 widgetHTML += `
                     <div class="chat-widget-section">
-                        <div class="chat-widget-title"><i class="fa-solid fa-sparkles text-gold"></i> Recommended Collections:</div>
+                        <div class="chat-widget-title"><i class="fa-solid fa-sparkles text-gold"></i> Recommended Collections</div>
                         <div class="chat-products-carousel">${cardsHTML}</div>
                     </div>
                 `;
@@ -1020,10 +1157,11 @@ function addMessageToChat(role, content, actions = []) {
         if (actions.some(a => ['request_measurements', 'schedule_technician'].includes(a.type)) || content.toLowerCase().includes('technician') || content.toLowerCase().includes('measurement')) {
             widgetHTML += `
                 <div class="chat-widget-card">
-                    <div class="chat-widget-title"><i class="fa-solid fa-tape text-gold"></i> Doorstep Tailor & Fitting Options:</div>
-                    <p class="text-xs text-muted mt-1">Select your preferred fitting service below:</p>
+                    <div class="chat-widget-title"><i class="fa-solid fa-tape text-gold"></i> Sizing & Tailor Visit Options:</div>
+                    <p class="text-xs text-muted mt-1">Select your preferred fitting option in chat:</p>
                     <div class="chat-widget-actions mt-2">
-                        <button class="btn btn-xs btn-gold" onclick="openCustomizerDrawer()"><i class="fa-solid fa-sliders"></i> Open Sizing Drawer</button>
+                        <button class="btn btn-xs btn-gold" onclick="sendSuggestion('I choose Ready Size M with Slim Fit')">Slim Fit (Ready M)</button>
+                        <button class="btn btn-xs btn-gold" onclick="sendSuggestion('I choose Ready Size L with Regular Fit')">Regular Fit (Ready L)</button>
                         <button class="btn btn-xs btn-outline" onclick="quickScheduleVisit('Mumbai')">🏠 Visit (Mumbai)</button>
                         <button class="btn btn-xs btn-outline" onclick="quickScheduleVisit('Bangalore')">🏠 Visit (Bangalore)</button>
                         <button class="btn btn-xs btn-outline" onclick="quickScheduleVisit('Gurgaon')">🏠 Visit (Gurgaon)</button>
@@ -1212,74 +1350,81 @@ async function processAgentActions(actions) {
                 break;
                 
             case 'customize_measurements':
-                // Open Drawer first
-                openCustomizerDrawer();
-                
                 if (action.height) {
-                    document.getElementById('measure-height').value = action.height;
+                    state.customization.height = action.height;
+                    const el = document.getElementById('measure-height');
+                    if (el) el.value = action.height;
                 }
                 if (action.body_type) {
-                    document.getElementById('measure-body-type').value = action.body_type;
+                    state.customization.bodyType = action.body_type;
+                    const el = document.getElementById('measure-body-type');
+                    if (el) el.value = action.body_type;
                 }
                 
                 // Ready sizes vs Custom measurements selection
                 if (action.size_method) {
-                    selectSizeMethod(action.size_method);
+                    state.customization.sizeMethod = action.size_method;
                     
                     if (action.size_method === 'ready') {
                         if (action.ready_jacket_size) {
-                            document.getElementById('ready-jacket-size').value = action.ready_jacket_size;
+                            state.customization.readyJacketSize = action.ready_jacket_size;
+                            const el = document.getElementById('ready-jacket-size');
+                            if (el) el.value = action.ready_jacket_size;
                         }
                         if (action.ready_trouser_size) {
-                            document.getElementById('ready-trouser-size').value = action.ready_trouser_size;
+                            state.customization.readyTrouserSize = action.ready_trouser_size;
+                            const el = document.getElementById('ready-trouser-size');
+                            if (el) el.value = action.ready_trouser_size;
                         }
                     } else if (action.size_method === 'custom') {
                         if (action.fitting) {
-                            document.getElementById('custom-fitting').value = action.fitting;
+                            state.customization.fitting = action.fitting;
+                            const el = document.getElementById('custom-fitting');
+                            if (el) el.value = action.fitting;
                         }
                         if (action.custom_measurements) {
                             const cm = action.custom_measurements;
-                            if (cm.bust) document.getElementById('cust-bust').value = cm.bust;
-                            if (cm.waist) document.getElementById('cust-waist').value = cm.waist;
-                            if (cm.hips) document.getElementById('cust-hips').value = cm.hips;
-                            if (cm.upper) document.getElementById('cust-upper').value = cm.upper;
-                            if (cm.neck) document.getElementById('cust-neck').value = cm.neck;
-                            if (cm.outer_arm) document.getElementById('cust-outer-arm').value = cm.outer_arm;
-                            if (cm.shoulder) document.getElementById('cust-shoulder').value = cm.shoulder;
-                            if (cm.length) document.getElementById('cust-length').value = cm.length;
-                            if (cm.width) document.getElementById('cust-width').value = cm.width;
-                            if (cm.neck_point) document.getElementById('cust-neck-point').value = cm.neck_point;
+                            if (cm.bust) state.customization.customMeasurements.bust = cm.bust;
+                            if (cm.waist) state.customization.customMeasurements.waist = cm.waist;
+                            if (cm.hips) state.customization.customMeasurements.hips = cm.hips;
+                            if (cm.upper) state.customization.customMeasurements.upper = cm.upper;
+                            if (cm.neck) state.customization.customMeasurements.neck = cm.neck;
+                            if (cm.outer_arm) state.customization.customMeasurements.outerArm = cm.outer_arm;
+                            if (cm.shoulder) state.customization.customMeasurements.shoulder = cm.shoulder;
+                            if (cm.length) state.customization.customMeasurements.length = cm.length;
+                            if (cm.width) state.customization.customMeasurements.width = cm.width;
+                            if (cm.neck_point) state.customization.customMeasurements.neckPoint = cm.neck_point;
                             
-                            if (cm.crotch) document.getElementById('cust-crotch').value = cm.crotch;
-                            if (cm.cuff) document.getElementById('cust-cuff').value = cm.cuff;
-                            if (cm.lower_hips) document.getElementById('cust-lower-hips').value = cm.lower_hips;
-                            if (cm.thigh) document.getElementById('cust-thigh').value = cm.thigh;
-                            if (cm.lower_length) document.getElementById('cust-lower-length').value = cm.lower_length;
+                            if (cm.crotch) state.customization.customMeasurements.crotch = cm.crotch;
+                            if (cm.cuff) state.customization.customMeasurements.cuff = cm.cuff;
+                            if (cm.lower_hips) state.customization.customMeasurements.lowerHips = cm.lower_hips;
+                            if (cm.thigh) state.customization.customMeasurements.thigh = cm.thigh;
+                            if (cm.lower_length) state.customization.customMeasurements.lowerLength = cm.lower_length;
                         }
                     }
                 }
                 
-                validateFormFields();
-                updateMonitor(`Result: Set height/sizes in drawer`);
+                updateMonitor(`Result: Set height/sizes in session state`);
                 break;
                 
             case 'schedule_technician':
-                openCustomizerDrawer();
-                expandAppointmentSection(true);
-                
                 if (action.city) {
-                    document.getElementById('appt-city').value = action.city;
+                    state.appointment.city = action.city;
+                    const el = document.getElementById('appt-city');
+                    if (el) el.value = action.city;
                 }
                 if (action.date) {
-                    document.getElementById('appt-date').value = action.date;
+                    state.appointment.date = action.date;
+                    const el = document.getElementById('appt-date');
+                    if (el) el.value = action.date;
                 }
                 updateMonitor(`Result: Configured technician scheduler: city=${action.city}, date=${action.date}`);
                 break;
                 
             case 'add_to_bag':
-                // Wait short moment to let visual state reflect before closing and adding
-                await new Promise(resolve => setTimeout(resolve, 600));
-                submitCustomization();
+                // Wait short moment to let visual state reflect before adding
+                await new Promise(resolve => setTimeout(resolve, 400));
+                submitCustomization(true);
                 updateMonitor(`Result: Add to Bag completed`);
                 break;
                 
@@ -1327,8 +1472,7 @@ async function processAgentActions(actions) {
                 break;
 
             case 'request_measurements':
-                openCustomizerDrawer();
-                updateMonitor('Result: Measurement workflow requested');
+                updateMonitor('Result: Measurement workflow option presented in chat');
                 break;
 
             case 'create_quote':

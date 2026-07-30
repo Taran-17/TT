@@ -47,6 +47,23 @@ ALLOWED_BODY_TYPES = {"ectomorph_men", "mesomorph_men", "endomorph_men"}
 ALLOWED_SIZE_METHODS = {"ready", "custom"}
 ALLOWED_FITTINGS = {"regular_fit", "slim_fit", "loose_fit"}
 ALLOWED_CITIES = {"Mumbai", "Bangalore", "Gurgaon"}
+COLOR_KEYWORDS = [
+    "black",
+    "white",
+    "navy",
+    "blue",
+    "grey",
+    "gray",
+    "brown",
+    "beige",
+    "burgundy",
+    "green",
+    "aqua",
+    "pink",
+    "ivory",
+    "charcoal",
+    "silver",
+]
 FABRIC_NAMES = {
     "D 963/1 - Suit Soft stone",
     "AC 103/1 - Suit Pearl",
@@ -69,6 +86,51 @@ FABRIC_NAMES = {
     "WD 201/2 - Suit Royal blue",
     "WL 212/1 - Jacket Blush",
 }
+
+RECOMMENDATION_BLUEPRINTS = [
+    {
+        "name": "boardroom bundle",
+        "keywords": {"office", "business", "interview", "meeting", "pitch", "executive", "board"},
+        "product_ids": ["silver-slate", "printed-tie-combo", "mens-belt"],
+        "reason": "Silver Slate gives a clean office silhouette, while the tie and belt complete the look without overpowering it.",
+        "cross_sells": ["white shirt", "navy or silver tie", "minimal pocket square"],
+    },
+    {
+        "name": "power suit bundle",
+        "keywords": {"pinstripe", "authority", "power", "premium", "ceo", "boardroom", "investor"},
+        "product_ids": ["umber-pinstripe", "printed-tie-combo", "mens-belt"],
+        "reason": "Umber Pinstripe reads more authoritative and structured, which works well for high-stakes meetings and premium tailoring.",
+        "cross_sells": ["white shirt", "dark leather shoes", "subtle cufflinks"],
+    },
+    {
+        "name": "wedding reception bundle",
+        "keywords": {"wedding", "groom", "reception", "ceremony", "marriage", "guest"},
+        "product_ids": ["pearl-white", "printed-tie-combo", "mens-belt"],
+        "reason": "Pearl White photographs well for wedding settings and the matching accessories make the outfit feel complete.",
+        "cross_sells": ["cufflinks", "pocket square", "light-toned shirt"],
+    },
+    {
+        "name": "black-tie bundle",
+        "keywords": {"tuxedo", "black tie", "evening", "formal", "party", "night"},
+        "product_ids": ["soot-black", "printed-tie-combo", "mens-belt"],
+        "reason": "Soot Black is the strongest formal option in the catalog, and the accessories keep the outfit intentional rather than plain.",
+        "cross_sells": ["cufflinks", "satin shirt", "formal shoes"],
+    },
+    {
+        "name": "value comparison bundle",
+        "keywords": {"budget", "cheap", "cheaper", "value", "student", "affordable", "discount"},
+        "product_ids": ["silver-slate", "umber-pinstripe", "printed-tie-combo"],
+        "reason": "This comparison keeps the decision focused on value and use case, not just price.",
+        "cross_sells": ["choose one suit first", "add belt only if needed"],
+    },
+    {
+        "name": "accessory finishing bundle",
+        "keywords": {"tie", "belt", "cufflinks", "accessory", "gift", "bundle"},
+        "product_ids": ["printed-tie-combo", "mens-belt"],
+        "reason": "These are the two easiest finishing pieces to match with most formal outfits.",
+        "cross_sells": ["pocket square", "gift wrap", "reversible belt option"],
+    },
+]
 
 
 class AgentState(TypedDict, total=False):
@@ -130,8 +192,8 @@ def _session_fallback(session_id: str, selected_workflow) -> Any:
 def _branch_prompt(branch: str) -> str:
     prompts = {
         "sales": (
-            "Drive toward selection, sizing, fabric choice, and checkout. "
-            "Be concise, guide the customer to the next conversion step, and present clear options or product cards."
+            "Guide the customer through selecting fabric, fit, and sizing step-by-step using interactive options in chat. "
+            "Do not rush to finalize suit or checkout until options are selected or requested."
         ),
         "support": (
             "Handle the issue with empathy and operational clarity. "
@@ -143,11 +205,11 @@ def _branch_prompt(branch: str) -> str:
         ),
         "research": (
             "Focus on education, comparison, and preference gathering. "
-            "Help the customer narrow choices without pushing too early."
+            "Help the customer narrow choices step-by-step without pushing too early."
         ),
         "explore": (
             "Act like a premium stylist and discovery assistant. "
-            "Classify intent, ask one good question, and surface the best next options."
+            "Ask one clear question at a time and present clickable option choices in chat."
         ),
     }
     return prompts[branch]
@@ -187,7 +249,78 @@ def _extract_session_slots(messages: List[Dict[str, str]]) -> Dict[str, Any]:
             slots["city"] = city.title()
             break
 
+    for color in COLOR_KEYWORDS:
+        if color in text:
+            slots["color"] = color.title()
+            break
+
+    budget_match = re.search(r"(?:under|within|around|below|up to|upto)\s*(?:rs\.?|inr|₹)?\s*([0-9][0-9,]*)", text)
+    if budget_match:
+        slots["budget"] = budget_match.group(1)
+    elif "budget" in text:
+        slots["budget"] = "open"
+
     return slots
+
+
+def _recommendation_context(workflow, user_text: str, slots: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    text = (user_text or "").lower()
+    haystack = f"{workflow.id} {workflow.title} {workflow.summary} {text}"
+    for blueprint in RECOMMENDATION_BLUEPRINTS:
+        if any(keyword in haystack for keyword in blueprint["keywords"]):
+            bundle_items = []
+            for index, product_id in enumerate(blueprint["product_ids"]):
+                bundle_items.append(
+                    {
+                        "product_id": product_id,
+                        "role": "anchor piece" if index == 0 else ("finishing piece" if index == len(blueprint["product_ids"]) - 1 else "supporting piece"),
+                    }
+                )
+            reason = blueprint["reason"]
+            if slots.get("color"):
+                reason = f"{reason} The customer also mentioned {slots['color'].lower()} preferences, so the palette can be tuned around that."
+            if slots.get("budget") and slots.get("budget") != "open":
+                reason = f"{reason} The target budget around {slots['budget']} keeps the recommendation practical."
+            return {
+                "title": blueprint["name"].replace("_", " ").title(),
+                "product_ids": blueprint["product_ids"],
+                "bundle_items": bundle_items,
+                "reason": reason,
+                "cross_sells": blueprint["cross_sells"],
+            }
+    return None
+
+
+def _enrich_actions_with_recommendations(actions: List[Dict[str, Any]], workflow, user_text: str, slots: Dict[str, Any]) -> List[Dict[str, Any]]:
+    enriched: List[Dict[str, Any]] = []
+    recommendation_present = False
+    recommendation_context = _recommendation_context(workflow, user_text, slots)
+
+    for action in actions:
+        if action.get("type") in {"show_recommendations", "compare_products", "offer_alternative"}:
+            recommendation_present = True
+            if recommendation_context:
+                action.setdefault("title", recommendation_context["title"])
+                action.setdefault("reason", recommendation_context["reason"])
+                action.setdefault("bundle_items", recommendation_context["bundle_items"])
+                action.setdefault("cross_sells", recommendation_context["cross_sells"])
+                if not action.get("product_ids"):
+                    action["product_ids"] = recommendation_context["product_ids"]
+        enriched.append(action)
+
+    if not recommendation_present and recommendation_context:
+        enriched.append(
+            {
+                "type": "show_recommendations",
+                "title": recommendation_context["title"],
+                "product_ids": recommendation_context["product_ids"],
+                "bundle_items": recommendation_context["bundle_items"],
+                "reason": recommendation_context["reason"],
+                "cross_sells": recommendation_context["cross_sells"],
+            }
+        )
+
+    return enriched
 
 
 def _build_system_prompt(workflow, related, branch: str, messages: List[Dict[str, str]] = None) -> str:
@@ -197,7 +330,7 @@ def _build_system_prompt(workflow, related, branch: str, messages: List[Dict[str
     turn_count = len([m for m in messages if m.get("role") == "user"])
 
     return f"""You are the TechTailor AI Concierge & Executive Shopping Assistant.
-You are operating inside a LangGraph workflow to guide customers from discovery to customization, sizing, and checkout.
+You are operating inside a LangGraph workflow to guide customers through bespoke tailoring selection and purchasing.
 
 Selected workflow:
 {render_workflow_brief(workflow)}
@@ -213,13 +346,14 @@ Session Memory State:
 - Already Identified Details: {json.dumps(slots) if slots else "None yet"}
 
 STRICT SHOPPING AGENT RULES:
-1. PROGRESS THE SHOPPING FUNNEL: Do NOT ask the same question twice if details are already in 'Already Identified Details'. Move directly to the next stage (e.g., Occasion -> Fabric/Product Recommendation -> Sizing/Measurements -> Add to Bag).
-2. ALWAYS PROVIDE CLICKABLE OPTIONS: Whenever you ask a question or offer choices, you MUST include a `present_options` action in your JSON `actions` array with 3 to 5 clear options.
-   Example action: `{{"type": "present_options", "title": "Choose Occasion", "options": ["Office Formal", "Wedding Reception", "Casual Weekend", "Party Wear"]}}`
-3. VISUAL PRODUCT & FABRIC RECOMMENDATIONS: When recommending suits or garments, output a `show_recommendations` action with product IDs (`silver-slate`, `pearl-white`, `umber-pinstripe`, `soot-black`, `misty-aqua`, `printed-tie-combo`, `mens-belt`). When discussing fabrics, output a `customize_fabric` action.
-4. SIZING & TAILORING: Offer `request_measurements` or `schedule_technician` (cities: Mumbai, Bangalore, Gurgaon) actions when sizing is discussed.
-5. DRIVE TO CART: When customer expresses interest in buying or ordering, output `add_to_bag` or `open_cart` action to complete the purchase flow.
-6. Keep text responses concise (2-4 sentences max), polite, and action-driven.
+1. STEP-BY-STEP GUIDANCE: Do NOT rush to finalize the suit or add to bag immediately. Guide the customer step-by-step through their preferences (Occasion -> Garment/Style -> Fabric choice -> Fit & Sizing preference).
+2. IN-CHAT OPTION SELECTION ONLY: Do NOT ask or force the customer to open popup menus or form drawers to adjust options. Present clear choices directly inside your chat response so the customer can select options strictly through your response choices.
+3. ALWAYS PROVIDE `present_options`: In EVERY response where choices or questions are presented, you MUST include a `present_options` action in your JSON `actions` array with 3 to 5 clear options.
+   Example action: `{{"type": "present_options", "title": "Select Fit / Fabric Choice", "options": ["Soft Stone Wool", "Pearl Cashmere", "Slim Fit", "Regular Fit"]}}`
+4. VISUAL PRODUCT & FABRIC RECOMMENDATIONS: When recommending suits, output `show_recommendations` with product IDs (`silver-slate`, `pearl-white`, `umber-pinstripe`, `soot-black`, `misty-aqua`, `printed-tie-combo`, `mens-belt`). Always explain why the look works and include complete outfit combinations, not single products only. When discussing fabrics, output `customize_fabric`.
+5. BUDGET, COLOUR, AND COMPATIBILITY AWARENESS: If the customer mentions budget, colour combinations, occasion, body type, or styling preferences, reflect that in your recommendation reasoning and choose the closest matching complete look.
+6. HELP WITH FINAL STEPS: Only when the customer has selected their desired options or explicitly confirms they want to order/buy/add to bag, proceed to finalize their suit and output the `add_to_bag` action.
+7. Keep text responses concise (2-4 sentences max), polite, and action-driven.
 
 Return valid JSON with keys: response and actions."""
 
@@ -319,6 +453,16 @@ def _normalize_actions(actions: Any, workflow_id: str) -> List[Dict[str, Any]]:
                 normalized["product_ids"] = ["silver-slate", "pearl-white"]
             if item.get("title"):
                 normalized["title"] = item["title"]
+            if item.get("reason"):
+                normalized["reason"] = item["reason"]
+            if isinstance(item.get("bundle_items"), list):
+                normalized["bundle_items"] = item["bundle_items"]
+            if isinstance(item.get("cross_sells"), list):
+                normalized["cross_sells"] = item["cross_sells"]
+            if item.get("budget"):
+                normalized["budget"] = item["budget"]
+            if item.get("style_notes"):
+                normalized["style_notes"] = item["style_notes"]
         else:
             for k, v in item.items():
                 normalized[k] = v
@@ -335,14 +479,14 @@ def _generate_response(state: AgentState, branch: str) -> AgentState:
             "actions": [],
         }
 
-    workflow_id = state["workflow_id"]
-    from workflow_catalog import WORKFLOW_INDEX
-
-    workflow = WORKFLOW_INDEX[workflow_id]
+    from workflow_catalog import WORKFLOW_INDEX, DEFAULT_WORKFLOW
+    workflow_id = state.get("workflow_id") or "master_entry"
+    workflow = WORKFLOW_INDEX.get(workflow_id, DEFAULT_WORKFLOW)
     related = related_workflows(workflow)
-    system_prompt = state.get("system_prompt") or _build_system_prompt(workflow, related, branch, state.get("messages", []))
+    messages = state.get("messages", [])
+    system_prompt = state.get("system_prompt") or _build_system_prompt(workflow, related, branch, messages)
     api_messages: List[Dict[str, str]] = [{"role": "system", "content": system_prompt}]
-    for message in state["messages"]:
+    for message in messages:
         role = message.get("role")
         content = message.get("content", "")
         if role in {"user", "assistant", "system"}:
@@ -368,6 +512,8 @@ def _generate_response(state: AgentState, branch: str) -> AgentState:
 
     response_text = response_json.get("response", "")
     actions = _normalize_actions(response_json.get("actions", []), workflow.id)
+    slots = _extract_session_slots(messages)
+    actions = _enrich_actions_with_recommendations(actions, workflow, _last_user_message(messages), slots)
     return {
         "response": response_text,
         "actions": actions,

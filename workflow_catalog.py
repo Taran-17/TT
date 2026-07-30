@@ -317,6 +317,7 @@ def _generate_workflows() -> List[WorkflowSpec]:
 
 WORKFLOWS: List[WorkflowSpec] = _generate_workflows()
 WORKFLOW_INDEX: Dict[str, WorkflowSpec] = {workflow.id: workflow for workflow in WORKFLOWS}
+DEFAULT_WORKFLOW: WorkflowSpec = WORKFLOW_INDEX["master_entry"]
 
 
 def workflow_to_dict(workflow: WorkflowSpec) -> Dict[str, object]:
