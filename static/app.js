@@ -138,7 +138,8 @@ let state = {
     },
     chatHistory: [],
     groqApiKey: '',
-    sessionId: ''
+    sessionId: '',
+    pendingConfirmation: null
 };
 
 // ==========================================================================
@@ -849,19 +850,22 @@ async function sendMessage() {
         }
 
         updateWorkflowUI(data);
+        state.pendingConfirmation = data.pending_confirmation || null;
 
         // Add assistant reply to UI
         const assistantContent = data.error
             ? `${data.response || 'The agent could not complete the request.'}\n\nError: ${data.error}`
             : data.response;
-        addMessageToChat('assistant', assistantContent, data.actions || []);
+        addMessageToChat('assistant', assistantContent, data.actions || [], {
+            pendingConfirmation: data.pending_confirmation || null
+        });
         state.chatHistory.push({ role: 'assistant', content: assistantContent });
 
         // Speak the assistant's response so agent is never mute!
         speakText(assistantContent);
 
         // Process any returned structured actions
-        if (data.actions && data.actions.length > 0) {
+        if (!data.pending_confirmation && data.actions && data.actions.length > 0) {
             await processAgentActions(data.actions);
         }
 
@@ -977,7 +981,7 @@ function findCatalogProduct(productId) {
     return null;
 }
 
-function addMessageToChat(role, content, actions = []) {
+function addMessageToChat(role, content, actions = [], meta = {}) {
     const container = document.getElementById('chat-messages');
     const msgDiv = document.createElement('div');
     msgDiv.className = `message ${role === 'user' ? 'user-msg' : 'assistant-msg'}`;
@@ -1177,6 +1181,21 @@ function addMessageToChat(role, content, actions = []) {
                     <div class="chat-widget-title"><i class="fa-solid fa-bag-shopping text-gold"></i> Shopping Bag (${state.cart.length} items):</div>
                     <div class="mt-2">
                         <button class="btn btn-gold btn-sm w-full" onclick="toggleDrawer('cart-drawer', true)"><i class="fa-solid fa-cart-shopping"></i> Review Bag & Checkout</button>
+                    </div>
+                </div>
+            `;
+        }
+
+        if (meta.pendingConfirmation) {
+            const confirmationTitle = meta.pendingConfirmation.title || 'Confirm this action';
+            const confirmationMessage = meta.pendingConfirmation.message || 'Reply confirm or cancel.';
+            widgetHTML += `
+                <div class="chat-widget-card gold-border chat-confirmation-card">
+                    <div class="chat-widget-title"><i class="fa-solid fa-shield-halved text-gold"></i> ${confirmationTitle}</div>
+                    <p class="text-sm" style="line-height: 1.5; margin: 6px 0 10px 0;">${confirmationMessage}</p>
+                    <div class="chat-widget-actions">
+                        <button class="btn btn-xs btn-gold" onclick="sendSuggestion('confirm')">Confirm</button>
+                        <button class="btn btn-xs btn-dark" onclick="sendSuggestion('cancel')">Cancel</button>
                     </div>
                 </div>
             `;

@@ -8,7 +8,9 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from agent_graph import AGENT_GRAPH
+from langgraph.types import Command
+
+from agent_runtime import AGENT_GRAPH
 from agent_store import get_analytics, get_recent_messages, record_message
 from workflow_catalog import (
     catalog_to_dicts,
@@ -46,7 +48,17 @@ class ChatResponse(BaseModel):
     workflow_title: Optional[str] = None
     intent_bucket: Optional[str] = None
     workflow_summary: Optional[str] = None
+    pending_confirmation: Optional[Dict[str, Any]] = None
     error: Optional[str] = None
+
+
+def _normalize_confirmation(text: str) -> str:
+    cleaned = (text or "").strip().lower()
+    if cleaned in {"confirm", "yes", "y", "ok", "okay", "proceed", "continue"}:
+        return "confirm"
+    if cleaned in {"cancel", "no", "n", "stop", "abort"}:
+        return "cancel"
+    return cleaned
 
 
 @app.post("/api/chat", response_model=ChatResponse)
@@ -56,6 +68,11 @@ async def chat(request: ChatRequest, x_groq_api_key: Optional[str] = Header(None
             os.environ["GROQ_API_KEY"] = x_groq_api_key
 
         session_id = request.session_id or "default"
+        config = {"configurable": {"thread_id": session_id}}
+        last_message_text = request.messages[-1].content if request.messages else ""
+        snapshot = AGENT_GRAPH.get_state(config)
+        pending_interrupt = snapshot.interrupts[0].value if snapshot and snapshot.interrupts else None
+
         if request.messages:
             last_message = request.messages[-1]
             if last_message.role == "user":
@@ -64,19 +81,39 @@ async def chat(request: ChatRequest, x_groq_api_key: Optional[str] = Header(None
                 except Exception as e:
                     print("Warning: Failed to record user message:", e)
 
-        state = {
-            "session_id": session_id,
-            "messages": [msg.model_dump() for msg in request.messages],
-            "system_prompt": request.system_prompt,
-        }
+        if pending_interrupt:
+            resume_value = _normalize_confirmation(last_message_text)
+            result = AGENT_GRAPH.invoke(Command(resume=resume_value), config)
+        else:
+            state = {
+                "session_id": session_id,
+                "messages": [msg.model_dump() for msg in request.messages],
+                "system_prompt": request.system_prompt,
+            }
+            result = AGENT_GRAPH.invoke(state, config)
 
-        result = AGENT_GRAPH.invoke(state)
-        if result.get("response"):
+        interrupt_payload = None
+        if isinstance(result, dict) and result.get("__interrupt__"):
+            interrupt_obj = result["__interrupt__"][0]
+            interrupt_payload = getattr(interrupt_obj, "value", None)
+
+        response_text = result.get("response", "") if isinstance(result, dict) else ""
+        actions = result.get("actions", []) if isinstance(result, dict) else []
+        pending_actions = result.get("pending_actions", []) if isinstance(result, dict) else []
+
+        if interrupt_payload:
+            if isinstance(interrupt_payload, dict):
+                prompt_text = interrupt_payload.get("message") or interrupt_payload.get("title") or "Please confirm or cancel."
+                response_text = prompt_text
+            actions = [action for action in actions if action.get("type") not in {"add_to_bag", "schedule_technician"}]
+            pending_actions = [action for action in pending_actions if action.get("type") in {"add_to_bag", "schedule_technician"}]
+
+        if response_text:
             try:
                 record_message(
                     session_id,
                     "assistant",
-                    result.get("response", ""),
+                    response_text,
                     workflow_id=result.get("workflow_id"),
                     intent_bucket=result.get("intent_bucket"),
                 )
@@ -84,12 +121,13 @@ async def chat(request: ChatRequest, x_groq_api_key: Optional[str] = Header(None
                 print("Warning: Failed to record assistant message:", e)
 
         return ChatResponse(
-            response=result.get("response", ""),
-            actions=result.get("actions", []),
+            response=response_text,
+            actions=actions,
             workflow_id=result.get("workflow_id"),
             workflow_title=result.get("workflow_title"),
             intent_bucket=result.get("intent_bucket"),
             workflow_summary=result.get("workflow_summary"),
+            pending_confirmation=interrupt_payload,
             error=result.get("error"),
         )
     except Exception as exc:
