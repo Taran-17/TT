@@ -4,11 +4,13 @@ import json
 import os
 import re
 from pathlib import Path
+from functools import lru_cache
 from typing import Any, Dict, List, Literal, Optional, TypedDict
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_core.tools import tool
 from langchain_groq import ChatGroq
+from groq import Groq
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command, interrupt
 
@@ -541,13 +543,43 @@ AVAILABLE_TOOLS = [
 ]
 
 
+@lru_cache(maxsize=8)
+def _accessible_groq_models(api_key: str) -> List[str]:
+    api_key = api_key.strip()
+    if not api_key:
+        return []
+
+    try:
+        client = Groq(api_key=api_key)
+        response = client.models.list()
+    except Exception:
+        return []
+
+    models: List[str] = []
+    for item in getattr(response, "data", []) or []:
+        model_id = getattr(item, "id", None)
+        is_active = getattr(item, "active", True)
+        if model_id and is_active:
+            models.append(model_id)
+    return models
+
+
 def _model_candidates() -> List[str]:
     configured = os.getenv("GROQ_MODEL", "").strip()
-    candidates = [configured] if configured else []
-    candidates.extend([
+    preferred = [
         "llama-3.3-70b-versatile",
+        "llama3-70b-8192",
+        "llama3-8b-8192",
         "llama-3.1-8b-instant",
-    ])
+    ]
+
+    api_key = os.getenv("GROQ_API_KEY", "")
+    accessible = _accessible_groq_models(api_key)
+    pool = accessible or preferred
+
+    candidates = [configured] if configured else []
+    candidates.extend(pool)
+
     seen = set()
     ordered: List[str] = []
     for candidate in candidates:
@@ -934,8 +966,13 @@ def _call_llm(state: AgentState, branch: str) -> AgentState:
             last_error = exc
 
     if response_message is None:
+        accessible = _accessible_groq_models(os.getenv("GROQ_API_KEY", ""))
+        if accessible:
+            error_hint = f"Available Groq models for this key: {', '.join(accessible[:10])}"
+        else:
+            error_hint = "No accessible Groq models were discovered for the current API key."
         return {
-            "response": "I could not generate a structured response from the model right now. Please try again.",
+            "response": f"I could not generate a structured response from the model right now. Please try again.\n\n{error_hint}",
             "actions": [],
             "pending_actions": [],
             "error": str(last_error) if last_error else "Unknown Groq error",
