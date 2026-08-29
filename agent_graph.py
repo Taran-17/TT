@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 from typing import Any, Dict, List, Optional, TypedDict
 
 from langgraph.graph import END, START, StateGraph
@@ -272,13 +273,68 @@ def _call_model(messages: List[Any], model_name: str) -> Dict[str, Any]:
     return _parse_json_blob(content)
 
 
+_MODEL_CACHE: Dict[str, Any] = {"ids": None, "fetched_at": 0.0}
+_MODEL_CACHE_TTL_SECONDS = 600  # Groq's lineup shifts periodically; re-check
+                                  # every 10 minutes rather than hardcoding
+                                  # names that quietly go stale/get retired.
+
+# Preferred substrings, in priority order, used to pick a sensible default
+# out of whatever Groq is actually serving right now. This is a *preference*,
+# not a requirement - if none of these match anything available, we just use
+# whatever the account does have access to rather than failing outright.
+_PREFERRED_MODEL_HINTS = ["versatile", "70b", "instant", "8b"]
+
+
+def _fetch_available_model_ids() -> List[str]:
+    """Ask Groq what this account can actually use right now, instead of
+    trusting a hardcoded model name that may have been renamed or retired
+    since this code was written (this is exactly what broke: the app kept
+    trying `llama-3.1-8b-instant`/`llama-3.3-70b-versatile` even after Groq
+    stopped serving them for this account, and had no way to notice)."""
+    api_key = os.getenv("GROQ_API_KEY")
+    if not api_key:
+        return []
+    try:
+        client = Groq(api_key=api_key)
+        response = client.models.list()
+        return [m.id for m in getattr(response, "data", []) if getattr(m, "id", None)]
+    except Exception:
+        return []
+
+
 def _model_candidates() -> List[str]:
     configured = os.getenv("GROQ_MODEL", "").strip()
-    candidates = [configured] if configured else []
-    candidates.extend([
-        "llama-3.3-70b-versatile",
-        "llama-3.1-8b-instant",
-    ])
+
+    now = time.time()
+    if _MODEL_CACHE["ids"] is None or (now - _MODEL_CACHE["fetched_at"]) > _MODEL_CACHE_TTL_SECONDS:
+        fetched = _fetch_available_model_ids()
+        if fetched:
+            _MODEL_CACHE["ids"] = fetched
+            _MODEL_CACHE["fetched_at"] = now
+
+    available = _MODEL_CACHE["ids"] or []
+
+    candidates: List[str] = []
+    if configured:
+        candidates.append(configured)
+
+    if available:
+        # Rank whatever's actually available by our preference hints, most
+        # preferred first, then append anything left over as a last resort.
+        def _rank(model_id: str) -> int:
+            lowered = model_id.lower()
+            for i, hint in enumerate(_PREFERRED_MODEL_HINTS):
+                if hint in lowered:
+                    return i
+            return len(_PREFERRED_MODEL_HINTS)
+
+        candidates.extend(sorted(available, key=_rank))
+    else:
+        # Discovery failed (no key yet, or Groq unreachable) - fall back to
+        # the last known-good names as a best-effort guess rather than
+        # having zero candidates at all.
+        candidates.extend(["llama-3.3-70b-versatile", "llama-3.1-8b-instant"])
+
     seen = set()
     ordered: List[str] = []
     for candidate in candidates:
