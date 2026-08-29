@@ -1,0 +1,51 @@
+version: "3.9"
+
+# Local dev stack: app + Postgres + Redis.
+# `docker compose up` gets you the full production-shaped setup; if you'd
+# rather just run `python -m uvicorn server:app` with no services at all,
+# that still works too - agent_store.py/redis_layer.py fall back to a local
+# SQLite file and an in-process dict when DATABASE_URL/REDIS_URL aren't set.
+
+services:
+  app:
+    build: .
+    ports:
+      - "8000:7860"
+    environment:
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      DATABASE_URL: postgresql://techtailor:techtailor@postgres:5432/techtailor
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: techtailor
+      POSTGRES_PASSWORD: techtailor
+      POSTGRES_DB: techtailor
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U techtailor"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  pgdata:
