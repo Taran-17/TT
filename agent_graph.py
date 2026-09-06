@@ -488,7 +488,7 @@ SHOPPING AGENT RULES:
    Whichever path they pick, always continue the conversation naturally afterward - don't treat any of these three as a dead end.
 5b. ASK FOR AN EVENT DATE WHENEVER THE OCCASION IMPLIES ONE: if the occasion is tied to a specific date (a wedding, a reception, any function - not "office wear" or "casual weekend"), ask when it is if you don't already know, e.g. "When is the wedding/reception?" - a plain day or day+month answer is fine, don't demand a full formatted date. This is what makes rule 5c possible.
 5c. RESPECT THE `delivery_estimate` ACTION WHEN IT APPEARS: the backend attaches this automatically once you know both a sizing method (from rule 5) and an event date (from rule 5b) - it tells you the earliest realistic delivery date for that method and, if `can_make_it` is `false`, that the finished garment likely won't arrive before the stated event. When you see `can_make_it: false`, say so plainly and honestly (don't bury it or soften it into nothing) and proactively suggest a faster path - e.g. a doorstep visit takes longer than manual measurements because of technician scheduling, so recommend manual measurements or an in-stock ready-to-wear option instead if the event is close. When `can_make_it` is `true`, you don't need to dwell on it - a brief one-line reassurance ("that'll comfortably reach you before the 12th") is enough.
-6. DRIVE TO CART: When the customer expresses clear interest in buying or ordering a specific item, output `add_to_bag` or `open_cart`.
+6. DRIVE TO CART, ONLY ON REAL BUYING INTENT: Output `add_to_bag` or `open_cart` ONLY when the customer has actually said something that means "buy/order/add this" (e.g. "add it to my bag", "I'll take the soot-black one", "let's order it"). Finishing sizing (manual measurements given, or a doorstep visit/virtual try-on confirmed) is NOT by itself buying intent and must NOT trigger `add_to_bag`/`open_cart` - just acknowledge what was just done (the measurements are saved, the visit is booked) and continue the conversation normally, e.g. ask if they'd like to see the outfit again or if there's anything else, without opening a cart/checkout action nobody asked for.
 7. RESPONSE LENGTH SHOULD MATCH THE MOMENT: a confirmation or a direct answer can be one short sentence; a recommendation or an explanation the customer asked for deserves the room to actually say something useful (a real sentence or two of reasoning, not just a label). Never pad, but never clip a genuinely useful answer down to a fragment just to "be concise" - a one-word reply to a real question reads as broken, not efficient. Sound like a knowledgeable, warm human stylist having a conversation, not a form generating field prompts.
 8. Note: a complete outfit plan (garment + accessory, styled to the occasion and any budget mentioned) is computed automatically by the backend when enough is known - you do not need to build one yourself; just keep the conversation natural.
 
@@ -751,6 +751,23 @@ def _enrich_actions(session_id: str, messages: List[Dict[str, str]], actions: Li
         actions = [a for a in actions if a.get("type") not in {"request_measurements", "schedule_technician"}]
         if not any(a.get("type") in {"request_photo", "show_style_preview"} for a in actions):
             actions.append({"type": "request_photo"})
+
+    # 0a2. Deterministic backstop for rule 6 (cart actions require real
+    #      buying intent). The model sometimes conflates "sizing/booking
+    #      just finished" with "therefore add to cart" and attaches
+    #      add_to_bag/open_cart in the same turn as a sizing action - which
+    #      is exactly the "opens an add-to-cart/checkout menu when all
+    #      we're doing is giving sizes or booking a technician" complaint.
+    #      Strip the cart action in that turn unless the customer's own
+    #      message actually says something that means "buy this."
+    _BUY_INTENT_WORDS = ["add to bag", "add it", "add this", "buy", "order", "purchase", "checkout", "check out", "i'll take", "ill take", "add to cart"]
+    has_sizing_action_this_turn = any(
+        a.get("type") in {"request_measurements", "schedule_technician", "customize_measurements", "request_photo", "show_style_preview"}
+        for a in actions
+    )
+    has_buy_intent = any(p in last_user_text for p in _BUY_INTENT_WORDS)
+    if has_sizing_action_this_turn and not has_buy_intent:
+        actions = [a for a in actions if a.get("type") not in {"add_to_bag", "open_cart"}]
 
     # 0b. Delivery/lead-time reality check. Whichever sizing method just got
     #     confirmed above (manual measurements, a doorstep visit, virtual

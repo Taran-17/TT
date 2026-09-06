@@ -1363,9 +1363,16 @@ async function processAgentActions(actions) {
                 break;
                 
             case 'customize_measurements':
-                // Open Drawer first
-                openCustomizerDrawer();
-                
+                // This used to force-open the full customizer/checkout
+                // drawer the instant the customer answered a sizing
+                // question in plain chat (height, body type, measurements)
+                // - which is exactly the "opens an add-to-cart menu when
+                // all we're doing is giving sizes" complaint. The backend
+                // already saves these to the customer's profile on its own
+                // (see _enrich_actions in agent_graph.py); the frontend
+                // doesn't need to pop any drawer to do that - just keep the
+                // form fields in sync in case the customer opens the drawer
+                // later, and let the chat carry on.
                 if (action.height) {
                     document.getElementById('measure-height').value = action.height;
                 }
@@ -1411,7 +1418,7 @@ async function processAgentActions(actions) {
                 }
                 
                 validateFormFields();
-                updateMonitor(`Result: Set height/sizes in drawer`);
+                updateMonitor(`Result: Measurements saved to profile (no drawer opened)`);
                 break;
                 
             case 'schedule_technician':
