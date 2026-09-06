@@ -904,12 +904,13 @@ function selectFabricFromChat(fabricName) {
 }
 
 function quickScheduleVisit(city) {
-    openCustomizerDrawer();
-    expandAppointmentSection(true);
-    document.getElementById('appt-city').value = city;
+    // Scheduling a visit is its own thing, not a step toward buying
+    // something - it shouldn't open the full customizer/checkout drawer.
+    // Just record it and confirm.
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
-    document.getElementById('appt-date').value = tomorrow.toISOString().split('T')[0];
+    state.appointment.city = city;
+    state.appointment.date = tomorrow.toISOString().split('T')[0];
     showToast(`Scheduled Technician visit in ${city}!`);
     updateMonitor(`Result: Technician visit set for ${city}`);
     // This used to be a pure UI side-effect with nothing sent back to the
@@ -1353,14 +1354,16 @@ async function processAgentActions(actions) {
                 break;
                 
             case 'schedule_technician':
-                openCustomizerDrawer();
-                expandAppointmentSection(true);
-                
-                if (action.city) {
-                    document.getElementById('appt-city').value = action.city;
-                }
-                if (action.date) {
-                    document.getElementById('appt-date').value = action.date;
+                // This used to force-open the full customizer/checkout
+                // drawer (fabric, fit, "Add to Bag" and all) just to note
+                // down a city and date - which is why scheduling a visit
+                // felt like being shoved toward a purchase. Scheduling a
+                // visit doesn't need any of that: just record the
+                // appointment details and confirm it in the chat itself.
+                state.appointment.city = action.city || state.appointment.city;
+                state.appointment.date = action.date || state.appointment.date;
+                if (action.city || action.date) {
+                    showToast(`Doorstep visit noted${action.city ? ' - ' + action.city : ''}${action.date ? ' on ' + action.date : ''}`);
                 }
                 updateMonitor(`Result: Configured technician scheduler: city=${action.city}, date=${action.date}`);
                 break;
@@ -1439,8 +1442,16 @@ async function processAgentActions(actions) {
                 break;
 
             case 'request_measurements':
-                openCustomizerDrawer();
-                updateMonitor('Result: Measurement workflow requested');
+                // This used to auto-open the full customizer/checkout
+                // drawer the instant sizing came up - even though the agent
+                // already asks for chest/waist/height as a normal chat
+                // question. Forcing the drawer open on top of that made it
+                // look like answering in chat wasn't enough and you had to
+                // go add something to cart. The "Open Sizing Drawer" button
+                // in the chat widget (see addMessageToChat) is still there
+                // for anyone who'd rather use a form, but it's opt-in now,
+                // not automatic.
+                updateMonitor('Result: Measurement workflow requested (answer in chat, or use the Open Sizing Drawer button)');
                 break;
 
             case 'create_quote':
