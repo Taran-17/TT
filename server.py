@@ -11,9 +11,19 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from agent_graph import ALLOWED_PRODUCT_IDS, AGENT_GRAPH
-from agent_store import ensure_stock_seeded, get_all_stock, get_analytics, get_recent_messages, get_stock, record_message
-from redis_layer import subscribe_events_blocking
+from agent_store import (
+    ensure_stock_seeded,
+    get_all_stock,
+    get_analytics,
+    get_recent_messages,
+    get_session_snapshot,
+    get_stock,
+    record_message,
+    reset_session_workflow,
+)
+from redis_layer import set_session_state, subscribe_events_blocking
 from workflow_catalog import (
+    WORKFLOW_INDEX,
     catalog_to_dicts,
     workflow_to_dict,
 )
@@ -54,16 +64,62 @@ class ChatResponse(BaseModel):
     error: Optional[str] = None
 
 
+_RESTART_PHRASES = ("start new consultation", "start a new consultation", "start new", "start over", "start fresh")
+
+
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest, x_groq_api_key: Optional[str] = Header(None)):
     if x_groq_api_key:
         os.environ["GROQ_API_KEY"] = x_groq_api_key
 
     session_id = request.session_id or "default"
+    # The browser tab's own chat history resets on every page load (nothing
+    # is restored from prior visits into it), so the very first message of a
+    # fresh load is always exactly one user message - that's the signal a
+    # "visit" just started, as opposed to the Nth message of an ongoing one.
+    is_fresh_page_load = len(request.messages) == 1 and request.messages[0].role == "user"
+    last_user_text = request.messages[-1].content.strip().lower() if request.messages and request.messages[-1].role == "user" else ""
+
     if request.messages:
         last_message = request.messages[-1]
         if last_message.role == "user":
             record_message(session_id, last_message.role, last_message.content)
+
+    if any(phrase in last_user_text for phrase in _RESTART_PHRASES):
+        # Explicit "start a new journey" - erase the stored workflow so the
+        # next classification pass starts clean instead of _session_fallback
+        # resuming whatever the customer was doing before. Session-memory
+        # signatures (outfit plan, delivery estimate) live in the same blob,
+        # so wiping it also stops a stale plan from a previous journey
+        # leaking into the new one.
+        reset_session_workflow(session_id)
+        set_session_state(session_id, {})
+    elif is_fresh_page_load:
+        # Returning to an existing, already-active conversation - previously
+        # this silently resumed the old workflow (e.g. straight back into
+        # "When is your wedding?") with no acknowledgement at all that time
+        # had passed. Ask instead of assuming.
+        snapshot = get_session_snapshot(session_id)
+        if snapshot and snapshot.get("workflow_id") and (snapshot.get("turn_count") or 0) > 0:
+            workflow = WORKFLOW_INDEX.get(snapshot["workflow_id"])
+            workflow_title = snapshot.get("workflow_title") or (workflow.title if workflow else snapshot["workflow_id"])
+            response_text = (
+                f"Welcome back! Last time you were in the middle of: {workflow_title}. "
+                f"Want to pick up where you left off, or start something new?"
+            )
+            record_message(session_id, "assistant", response_text, workflow_id=snapshot["workflow_id"], intent_bucket=snapshot.get("intent_bucket"))
+            return ChatResponse(
+                response=response_text,
+                actions=[{
+                    "type": "present_options",
+                    "title": "Welcome back!",
+                    "options": [f"Continue - {workflow_title}", "Start New Consultation"],
+                }],
+                workflow_id=snapshot["workflow_id"],
+                workflow_title=workflow_title,
+                intent_bucket=snapshot.get("intent_bucket"),
+                workflow_summary=snapshot.get("workflow_summary"),
+            )
 
     state = {
         "session_id": session_id,

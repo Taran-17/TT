@@ -136,6 +136,13 @@ let state = {
         city: '',
         date: ''
     },
+    // 'purchase' = drawer opened from an explicit "Customize" click on a
+    // product, so submitting it adds that item to the bag (unchanged
+    // behavior). 'measurements' = drawer opened just to answer a sizing
+    // question in chat (see openSizingOnlyDrawer) - submitting it should
+    // only save the measurements and continue the conversation, never
+    // silently add a random product to the bag.
+    drawerIntent: 'purchase',
     chatHistory: [],
     groqApiKey: '',
     sessionId: ''
@@ -543,6 +550,14 @@ function confirmFabricSelection() {
 
 // Customizer Drawer
 function openCustomizerDrawer() {
+    // Label the submit button honestly depending on why the drawer was
+    // opened - "Add to Bag" is misleading when the customer only came here
+    // to answer a sizing question (see openSizingOnlyDrawer).
+    const submitBtn = document.getElementById('customizer-submit-btn');
+    if (submitBtn) {
+        submitBtn.textContent = state.drawerIntent === 'measurements' ? 'Save Measurements' : 'Add to Bag';
+    }
+
     // Populate form elements from state
     document.getElementById('measure-height').value = state.customization.height;
     document.getElementById('measure-body-type').value = state.customization.bodyType;
@@ -642,8 +657,30 @@ function submitCustomization() {
     state.customization.bodyType = bodyType;
     state.customization.readyJacketSize = document.getElementById('ready-jacket-size').value;
     state.customization.readyTrouserSize = document.getElementById('ready-trouser-size').value;
-    
+
     state.customization.fitting = document.getElementById('custom-fitting').value;
+
+    // If this drawer was opened just to answer a sizing question in chat
+    // (openSizingOnlyDrawer), stop here - save the measurements and hand
+    // control back to the chat instead of silently adding a guessed
+    // product to the bag. This was the actual cause of "nothing happens
+    // after entering measurements, the chat doesn't move on its own": the
+    // old code always ran the add-to-bag path below, closed the drawer,
+    // and opened the cart - with nothing ever sent back to the
+    // conversation, so the chat looked frozen even though a phantom item
+    // had just been added behind the scenes.
+    if (state.drawerIntent === 'measurements') {
+        let summary = `Height: ${height.toUpperCase()}, Body type: ${bodyType.toUpperCase()}`;
+        if (state.customization.sizeMethod === 'custom') {
+            summary += `, Fit: ${state.customization.fitting}`;
+        }
+        toggleDrawer('custom-drawer', false);
+        showToast('Measurements saved!');
+        updateMonitor(`Result: Measurements saved (${summary})`);
+        state.drawerIntent = 'purchase'; // reset for next time
+        sendSuggestion(`I've entered my measurements - ${summary}.`);
+        return;
+    }
 
     let product = null;
     for (const items of Object.values(CATALOG)) {
@@ -890,9 +927,21 @@ function quickAddToCart(productId) {
 }
 
 function quickCustomizeProduct(productId) {
+    state.drawerIntent = 'purchase';
     selectProduct(productId);
     openCustomizerDrawer();
     showToast("Opened Customization & Sizing panel!");
+}
+
+// Opened from the chat's "Enter Your Measurements" widget, i.e. the
+// customer is just answering a sizing question, not buying a specific
+// product. Submitting this drawer must NOT silently add something to the
+// bag (see submitCustomization) - it should just save the measurements and
+// let the conversation continue.
+function openSizingOnlyDrawer() {
+    state.drawerIntent = 'measurements';
+    openCustomizerDrawer();
+    showToast("Opened Sizing panel - enter your measurements and hit Save.");
 }
 
 function selectFabricFromChat(fabricName) {
@@ -907,17 +956,29 @@ function quickScheduleVisit(city) {
     // Scheduling a visit is its own thing, not a step toward buying
     // something - it shouldn't open the full customizer/checkout drawer.
     // Just record it and confirm.
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
+    //
+    // This used to silently pick "tomorrow" as the date without ever
+    // asking - a visit needs a date the customer actually picked, not a
+    // guess. Ask for it with a plain date prompt; falling back to tomorrow
+    // only if they cancel/leave it blank, so the flow never dead-ends.
+    // Matches fulfillment.VISIT_SCHEDULING_LEAD_DAYS on the backend - a
+    // technician can't usually be booked for tomorrow, so don't default to
+    // a date that's earlier than what's realistically available.
+    const earliest = new Date();
+    earliest.setDate(earliest.getDate() + 2);
+    const defaultDate = earliest.toISOString().split('T')[0];
+    const picked = window.prompt(`What date works for your visit in ${city}? (YYYY-MM-DD, earliest available: ${defaultDate})`, defaultDate);
+    const visitDate = (picked && picked.trim()) ? picked.trim() : defaultDate;
+
     state.appointment.city = city;
-    state.appointment.date = tomorrow.toISOString().split('T')[0];
-    showToast(`Scheduled Technician visit in ${city}!`);
-    updateMonitor(`Result: Technician visit set for ${city}`);
+    state.appointment.date = visitDate;
+    showToast(`Scheduled Technician visit in ${city} on ${visitDate}!`);
+    updateMonitor(`Result: Technician visit set for ${city} on ${visitDate}`);
     // This used to be a pure UI side-effect with nothing sent back to the
     // chat, which left the conversation stuck (the customer picks a city
     // and the assistant never says another word). Sending this as a normal
     // chat message lets the agent actually acknowledge it and continue.
-    sendSuggestion(`I'd like to schedule a doorstep visit in ${city}.`);
+    sendSuggestion(`I'd like to schedule a doorstep visit in ${city} on ${visitDate}.`);
 }
 
 function quickVirtualTryOn() {
@@ -1086,7 +1147,7 @@ function addMessageToChat(role, content, actions = []) {
                     <div class="chat-widget-title"><i class="fa-solid fa-tape text-gold"></i> Enter Your Measurements:</div>
                     <p class="text-xs text-muted mt-1">Open the sizing panel to enter your details manually.</p>
                     <div class="chat-widget-actions mt-2">
-                        <button class="btn btn-xs btn-gold" onclick="openCustomizerDrawer()"><i class="fa-solid fa-sliders"></i> Open Sizing Drawer</button>
+                        <button class="btn btn-xs btn-gold" onclick="openSizingOnlyDrawer()"><i class="fa-solid fa-sliders"></i> Open Sizing Drawer</button>
                     </div>
                 </div>
             `;
@@ -1415,6 +1476,22 @@ async function processAgentActions(actions) {
                     showToast(`Suggested outfit: ${itemsText}${budgetText}`);
                     updateMonitor(`Outfit plan: ${itemsText} | Total ₹${action.total_price.toLocaleString()}${budgetText} | Compatibility ${action.compatibility_score}/100`);
                 }
+                break;
+
+            case 'delivery_estimate':
+                // Deterministic, backend-computed lead-time check (see
+                // fulfillment.py) - whether the sizing method just chosen
+                // can realistically deliver before a stated event date.
+                // Surfaced as a toast so a timing conflict is impossible to
+                // miss, not just a line buried in the chat text.
+                if (action.event_date) {
+                    if (action.can_make_it === false) {
+                        showToast(`Heads up: that usually takes about ${action.lead_time_days} days - it may not arrive before ${action.event_date}.`);
+                    } else {
+                        showToast(`On track: expect delivery by ${action.earliest_delivery}, ahead of ${action.event_date}.`);
+                    }
+                }
+                updateMonitor(`Delivery estimate: method=${action.method}, earliest=${action.earliest_delivery}, event=${action.event_date || 'n/a'}, can_make_it=${action.can_make_it}`);
                 break;
 
             case 'compare_products':

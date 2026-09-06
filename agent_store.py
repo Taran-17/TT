@@ -186,6 +186,24 @@ def upsert_session(
             db.add(row)
 
 
+def reset_session_workflow(session_id: str) -> None:
+    """Clear a session's stored workflow so the next turn classifies fresh
+    instead of _session_fallback resuming whatever the customer was doing
+    last time. `upsert_session` deliberately can't do this (it only ever
+    fills in a field if a new value is given, so old workflows never got
+    silently erased mid-conversation) - this is the explicit "start a new
+    journey" reset, used only when the customer asks for one."""
+    with _session() as db:
+        row = db.get(SessionRow, session_id)
+        if row:
+            row.workflow_id = None
+            row.workflow_title = None
+            row.intent_bucket = None
+            row.workflow_summary = None
+            row.branch = None
+            row.updated_at = _utc_now()
+
+
 def record_message(
     session_id: str,
     role: str,

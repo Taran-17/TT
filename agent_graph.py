@@ -4,12 +4,14 @@ import json
 import os
 import re
 import time
+from datetime import date
 from typing import Any, Dict, List, Optional, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 from groq import Groq
 
 import fashion_knowledge
+import fulfillment
 import outfit_planner
 import product_catalog
 from agent_store import (
@@ -57,6 +59,7 @@ ALLOWED_ACTION_TYPES = {
     "start_consultation",
     "present_options",
     "outfit_plan",  # deterministic, backend-computed - see _maybe_attach_outfit_plan
+    "delivery_estimate",  # deterministic, backend-computed - see fulfillment.py
 }
 
 ALLOWED_PAGES = {"home", "men", "women", "accessories"}
@@ -250,6 +253,10 @@ def _extract_session_slots(messages: List[Dict[str, str]]) -> Dict[str, Any]:
                 slots["budget_sensitivity"] = "price-conscious (no number given yet)"
                 break
 
+    event_date = _extract_event_date(messages)
+    if event_date:
+        slots["event_date"] = event_date
+
     return slots
 
 
@@ -277,6 +284,142 @@ def _extract_budget(text: str) -> Optional[int]:
         if 500 <= value <= 2_000_000:  # sane range for this catalog; filters out stray small numbers
             return value
     return None
+
+
+_MONTH_NAMES = {
+    "jan": 1, "january": 1, "feb": 2, "february": 2, "mar": 3, "march": 3,
+    "apr": 4, "april": 4, "may": 5, "jun": 6, "june": 6, "jul": 7, "july": 7,
+    "aug": 8, "august": 8, "sep": 9, "sept": 9, "september": 9, "oct": 10,
+    "october": 10, "nov": 11, "november": 11, "dec": 12, "december": 12,
+}
+
+_MONTH_ALTERNATION = "|".join(sorted(_MONTH_NAMES.keys(), key=len, reverse=True))
+
+_DATE_WITH_MONTH_PATTERN = re.compile(
+    rf"\b(\d{{1,2}})(?:st|nd|rd|th)?\s+({_MONTH_ALTERNATION})\b"
+    rf"|\b({_MONTH_ALTERNATION})\s+(\d{{1,2}})(?:st|nd|rd|th)?\b",
+    re.IGNORECASE,
+)
+
+_BARE_ORDINAL_PATTERN = re.compile(r"\b(\d{1,2})(?:st|nd|rd|th)\b")
+
+# Phrases in an assistant message that mean "what date is your event",
+# so a bare ordinal reply right after one of these ("12th") can be read as
+# the event date rather than requiring the customer to spell out a month.
+_DATE_QUESTION_MARKERS = [
+    "when is your wedding", "when is the wedding", "when's your wedding",
+    "when is your event", "when is your function", "what date",
+    "which date", "what's the date", "date is it", "date works for you",
+]
+
+
+def _resolve_day_to_date(day: int, month: Optional[int] = None) -> Optional[str]:
+    """Turn a stated day (and optional month) into a concrete ISO date,
+    always resolving to the next real future occurrence - customers state
+    an event date relative to "soon", never a date that already passed."""
+    today = date.today()
+    year = today.year
+    target_month = month or today.month
+    try:
+        candidate = date(year, target_month, day)
+    except ValueError:
+        return None
+    if candidate < today:
+        if month:
+            candidate = date(year + 1, target_month, day)
+        else:
+            next_month = target_month + 1
+            next_year = year
+            if next_month > 12:
+                next_month = 1
+                next_year += 1
+            try:
+                candidate = date(next_year, next_month, day)
+            except ValueError:
+                return None
+    return candidate.isoformat()
+
+
+def _extract_event_date(messages: List[Dict[str, str]]) -> Optional[str]:
+    """Best-effort extraction of a stated event date (a wedding, a function,
+    a travel date) so delivery/lead-time math (see fulfillment.py) has
+    something concrete to check against. Without this, "schedule a visit"
+    had no idea a wedding was 3 days away and stitching alone takes longer
+    than that."""
+    full_text = " ".join(m.get("content", "") for m in messages if m.get("role") == "user")
+
+    match = _DATE_WITH_MONTH_PATTERN.search(full_text)
+    if match:
+        if match.group(1):
+            day, month_name = int(match.group(1)), match.group(2)
+        else:
+            month_name, day = match.group(3), int(match.group(4))
+        month = _MONTH_NAMES.get(month_name.lower())
+        if month:
+            resolved = _resolve_day_to_date(day, month)
+            if resolved:
+                return resolved
+
+    # A bare ordinal ("12th") given as a reply right after the assistant
+    # asked specifically when the event is - the common real case ("When is
+    # your wedding?" -> "12th"). Scan every adjacent pair, not just the most
+    # recent, so this stays known on later turns of the same conversation.
+    for i in range(1, len(messages)):
+        if messages[i].get("role") != "user" or messages[i - 1].get("role") != "assistant":
+            continue
+        prior_text = messages[i - 1].get("content", "").lower()
+        if any(marker in prior_text for marker in _DATE_QUESTION_MARKERS):
+            ordinal_match = _BARE_ORDINAL_PATTERN.search(messages[i].get("content", ""))
+            if ordinal_match:
+                resolved = _resolve_day_to_date(int(ordinal_match.group(1)))
+                if resolved:
+                    return resolved
+
+    return None
+
+
+_BUDGET_HINT_CACHE: Optional[str] = None
+
+
+def _budget_band_hint() -> str:
+    """Real-terms guardrail for rule 1's budget-range prompting. The model
+    was previously left to invent its own example bands ("Under ₹2,000",
+    "₹2,000-₹4,000" ...) which are off by roughly an order of magnitude from
+    what anything in the catalog actually costs (₹18,000-₹38,000 for a main
+    garment) - so a customer picking any of those "budget" bands was really
+    picking a fantasy number the recommendations then ignored entirely.
+    Computing real bands from product_catalog means the example the model
+    sees is always anchored to what's actually for sale."""
+    global _BUDGET_HINT_CACHE
+    if _BUDGET_HINT_CACHE is not None:
+        return _BUDGET_HINT_CACHE
+
+    prices = []
+    for gender in ("men", "women"):
+        for pid in product_catalog.main_garments(gender):
+            product = product_catalog.get_product(pid)
+            if product:
+                prices.append(product["price"])
+
+    if not prices:
+        _BUDGET_HINT_CACHE = ""
+        return _BUDGET_HINT_CACHE
+
+    lo, hi = min(prices), max(prices)
+    third = max((hi - lo) // 3, 1)
+    q1, q2 = lo + third, lo + 2 * third
+
+    def fmt(n: int) -> str:
+        return f"₹{n:,}"
+
+    _BUDGET_HINT_CACHE = (
+        f"Our garments actually run about {fmt(lo)}-{fmt(hi)} - so realistic bands look like "
+        f'"Under {fmt(q1)}", "{fmt(q1)}-{fmt(q2)}", "{fmt(q2)}-{fmt(hi)}", "Above {fmt(hi)}" '
+        f"(adjust to the specific item category, e.g. accessories are far cheaper). Never propose "
+        f'bands like "Under ₹2,000" for a garment - that is off by an order of magnitude from what '
+        f"anything here costs and makes every recommendation look like it ignored the stated budget."
+    )
+    return _BUDGET_HINT_CACHE
 
 
 def _build_system_prompt(
@@ -332,7 +475,7 @@ Customer History (from previous visits on this device, if any - use it, don't as
 {fashion_context if fashion_context else ""}
 
 SHOPPING AGENT RULES:
-1. PROGRESS THE SHOPPING FUNNEL, IN THIS ORDER - Garment -> Occasion -> Budget -> Fabric/Product Recommendation -> Sizing/Measurements -> Add to Bag. Budget comes BEFORE fabric/style choices, not after - narrowing down fabric or styling options before you know the budget means you may walk the customer through choices they can't actually afford, then have to backtrack. Do NOT ask the same question twice if details are already in 'Already Identified Details' or 'Customer History'. If a returning customer's body type, fit, or past purchases are on file, reuse them by default and only ask if they want something different this time. If 'Already Identified Details' shows a `budget_sensitivity` value (the customer said something like "low budget" or "keep it cheap" without giving an actual number), treat that as a signal to ask for a concrete budget range right now with a `present_options` action (e.g. options like "Under ₹2,000", "₹2,000-₹4,000", "₹4,000-₹6,000", "Above ₹6,000" - adjust the ranges to the actual item category) BEFORE moving on to fabric or style - don't let it sit unresolved until the end of the conversation.
+1. PROGRESS THE SHOPPING FUNNEL, IN THIS ORDER - Garment -> Occasion -> Budget -> Fabric/Product Recommendation -> Sizing/Measurements -> Add to Bag. Budget comes BEFORE fabric/style choices, not after - narrowing down fabric or styling options before you know the budget means you may walk the customer through choices they can't actually afford, then have to backtrack. Do NOT ask the same question twice if details are already in 'Already Identified Details' or 'Customer History'. If a returning customer's body type, fit, or past purchases are on file, reuse them by default and only ask if they want something different this time. If 'Already Identified Details' shows a `budget_sensitivity` value (the customer said something like "low budget" or "keep it cheap" without giving an actual number), treat that as a signal to ask for a concrete budget range right now with a `present_options` action BEFORE moving on to fabric or style - don't let it sit unresolved until the end of the conversation. {_budget_band_hint()}
 2. CLICKABLE OPTIONS, WHEN THEY ACTUALLY HELP: If your reply asks the customer to pick between a small set of concrete choices (an occasion, a fabric family, a size), include a `present_options` action with 3-5 options.
    Example action: `{{"type": "present_options", "title": "Choose Occasion", "options": ["Office Formal", "Wedding Reception", "Casual Weekend", "Party Wear"]}}`
    Do NOT attach `present_options` to a reply that isn't actually posing that kind of choice (a plain answer, an acknowledgement, small talk) - forcing a widget onto every message is what makes the chat feel cluttered.
@@ -343,6 +486,8 @@ SHOPPING AGENT RULES:
    - "Schedule a Doorstep Visit" -> if you don't yet know the city, ask with `present_options` (options: "Mumbai", "Bangalore", "Gurgaon"); once you know the city, output `schedule_technician` with that city.
    - "Try It On Virtually (Beta)" -> output `request_photo`. This feature is a placeholder today (say so plainly - "virtual try-on is in beta, here's a placeholder preview for now" - don't overpromise a live camera/AR experience), but still acknowledge the choice and keep the conversation moving (e.g. ask what garment they'd like previewed, or offer to continue with manual sizing instead).
    Whichever path they pick, always continue the conversation naturally afterward - don't treat any of these three as a dead end.
+5b. ASK FOR AN EVENT DATE WHENEVER THE OCCASION IMPLIES ONE: if the occasion is tied to a specific date (a wedding, a reception, any function - not "office wear" or "casual weekend"), ask when it is if you don't already know, e.g. "When is the wedding/reception?" - a plain day or day+month answer is fine, don't demand a full formatted date. This is what makes rule 5c possible.
+5c. RESPECT THE `delivery_estimate` ACTION WHEN IT APPEARS: the backend attaches this automatically once you know both a sizing method (from rule 5) and an event date (from rule 5b) - it tells you the earliest realistic delivery date for that method and, if `can_make_it` is `false`, that the finished garment likely won't arrive before the stated event. When you see `can_make_it: false`, say so plainly and honestly (don't bury it or soften it into nothing) and proactively suggest a faster path - e.g. a doorstep visit takes longer than manual measurements because of technician scheduling, so recommend manual measurements or an in-stock ready-to-wear option instead if the event is close. When `can_make_it` is `true`, you don't need to dwell on it - a brief one-line reassurance ("that'll comfortably reach you before the 12th") is enough.
 6. DRIVE TO CART: When the customer expresses clear interest in buying or ordering a specific item, output `add_to_bag` or `open_cart`.
 7. RESPONSE LENGTH SHOULD MATCH THE MOMENT: a confirmation or a direct answer can be one short sentence; a recommendation or an explanation the customer asked for deserves the room to actually say something useful (a real sentence or two of reasoning, not just a label). Never pad, but never clip a genuinely useful answer down to a fragment just to "be concise" - a one-word reply to a real question reads as broken, not efficient. Sound like a knowledgeable, warm human stylist having a conversation, not a form generating field prompts.
 8. Note: a complete outfit plan (garment + accessory, styled to the occasion and any budget mentioned) is computed automatically by the backend when enough is known - you do not need to build one yourself; just keep the conversation natural.
@@ -572,6 +717,63 @@ def _enrich_actions(session_id: str, messages: List[Dict[str, str]], actions: Li
     here's a grounded, rule-based score for why X suits them," and where a
     customer's stated measurements get persisted for next time."""
     slots = _extract_session_slots(messages)
+
+    # 0. Deterministic backstop for the sizing-path choice. The model is
+    #    told (rule 5) to honor whichever of "Enter Measurements Manually" /
+    #    "Schedule a Doorstep Visit" / "Try It On Virtually" the customer
+    #    just picked, but in practice it sometimes attaches the wrong action
+    #    anyway (seen live: customer picks "Enter Measurements Manually" and
+    #    still gets the doorstep-visit widget). Since the customer's last
+    #    message is one of a handful of literal button labels/city names in
+    #    this flow, it's cheap to just check it directly and correct the
+    #    action list rather than trust the model got it right.
+    last_user_text = _last_user_message(messages).lower() if messages else ""
+    _CITY_WORDS = ["mumbai", "bangalore", "gurgaon"]
+    wants_manual = any(p in last_user_text for p in ["enter measurements manually", "manually", "enter my measurements"])
+    wants_visit = any(p in last_user_text for p in ["doorstep", "schedule a visit", "schedule visit", "technician visit"]) or any(
+        c in last_user_text for c in _CITY_WORDS
+    )
+    wants_virtual = any(p in last_user_text for p in ["try it on virtually", "virtual try-on", "virtually"])
+
+    if wants_manual and not wants_visit:
+        actions = [a for a in actions if a.get("type") != "schedule_technician"]
+        if not any(a.get("type") == "request_measurements" for a in actions):
+            actions.append({"type": "request_measurements"})
+    elif wants_visit and not wants_manual:
+        actions = [a for a in actions if a.get("type") != "request_measurements"]
+        if not any(a.get("type") == "schedule_technician" for a in actions):
+            city = next((c for c in _CITY_WORDS if c in last_user_text), None)
+            visit_action: Dict[str, Any] = {"type": "schedule_technician"}
+            if city:
+                visit_action["city"] = city.capitalize()
+            actions.append(visit_action)
+    elif wants_virtual:
+        actions = [a for a in actions if a.get("type") not in {"request_measurements", "schedule_technician"}]
+        if not any(a.get("type") in {"request_photo", "show_style_preview"} for a in actions):
+            actions.append({"type": "request_photo"})
+
+    # 0b. Delivery/lead-time reality check. Whichever sizing method just got
+    #     confirmed above (manual measurements, a doorstep visit, virtual
+    #     try-on), and if the customer has stated an event date, compute
+    #     whether a finished garment can actually get to them in time - and
+    #     say so, rather than silently confirming a visit/method that can't
+    #     possibly make it. Only attached once per distinct (method,
+    #     event_date) combination so it doesn't repeat every turn.
+    sizing_action = next(
+        (a for a in actions if a.get("type") in {"request_measurements", "schedule_technician", "request_photo", "show_style_preview"}),
+        None,
+    )
+    if sizing_action:
+        method = fulfillment.method_for_action(sizing_action["type"])
+        if method:
+            event_date = slots.get("event_date")
+            signature = f"{method}:{event_date}"
+            session_memory = _get_session_memory(session_id)
+            if session_memory.get("delivery_estimate_signature") != signature:
+                estimate = fulfillment.estimate(method, event_date)
+                actions.append({"type": "delivery_estimate", **estimate})
+                session_memory["delivery_estimate_signature"] = signature
+                _set_session_memory(session_id, session_memory)
 
     # 1. Persist measurements the moment they're given, so a *future* visit
     #    (see get_customer_profile in _build_system_prompt) doesn't have to
