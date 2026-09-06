@@ -912,6 +912,23 @@ function quickScheduleVisit(city) {
     document.getElementById('appt-date').value = tomorrow.toISOString().split('T')[0];
     showToast(`Scheduled Technician visit in ${city}!`);
     updateMonitor(`Result: Technician visit set for ${city}`);
+    // This used to be a pure UI side-effect with nothing sent back to the
+    // chat, which left the conversation stuck (the customer picks a city
+    // and the assistant never says another word). Sending this as a normal
+    // chat message lets the agent actually acknowledge it and continue.
+    sendSuggestion(`I'd like to schedule a doorstep visit in ${city}.`);
+}
+
+function quickVirtualTryOn() {
+    // Placeholder for now, per product decision - there's no live
+    // camera/AR preview yet. The point of building this now rather than
+    // leaving the button producing nothing (as request_photo/
+    // show_style_preview did before) is that the customer gets an honest
+    // acknowledgement instead of a dead click, and the conversation keeps
+    // moving either way.
+    showToast('Virtual Try-On (Beta): live preview is coming soon - for now, here is a placeholder.');
+    updateMonitor('Result: Virtual Try-On placeholder shown');
+    sendSuggestion("I'd like to try it on virtually.");
 }
 
 const STOCK_OPTION_IMAGES = {
@@ -1055,18 +1072,50 @@ function addMessageToChat(role, content, actions = []) {
             `;
         }
 
-        // 4. Doorstep Visit & Sizing Widget Card - only on an actual
-        // measurement/technician action from the agent.
-        if (actions.some(a => ['request_measurements', 'schedule_technician'].includes(a.type))) {
+        // 4. Sizing Widget Card - only on an actual measurement/technician
+        // action from the agent. The system prompt now asks the customer to
+        // choose between manual entry / doorstep visit / virtual try-on
+        // BEFORE jumping to either of these actions (see rule 5 in
+        // agent_graph.py), so by the time this card shows, the customer has
+        // already picked one of those three paths - this card is where they
+        // finish it, not where they choose it.
+        if (actions.some(a => a.type === 'request_measurements')) {
             widgetHTML += `
                 <div class="chat-widget-card">
-                    <div class="chat-widget-title"><i class="fa-solid fa-tape text-gold"></i> Doorstep Tailor & Fitting Options:</div>
-                    <p class="text-xs text-muted mt-1">Select your preferred fitting service below:</p>
+                    <div class="chat-widget-title"><i class="fa-solid fa-tape text-gold"></i> Enter Your Measurements:</div>
+                    <p class="text-xs text-muted mt-1">Open the sizing panel to enter your details manually.</p>
                     <div class="chat-widget-actions mt-2">
                         <button class="btn btn-xs btn-gold" onclick="openCustomizerDrawer()"><i class="fa-solid fa-sliders"></i> Open Sizing Drawer</button>
-                        <button class="btn btn-xs btn-outline" onclick="quickScheduleVisit('Mumbai')">🏠 Visit (Mumbai)</button>
-                        <button class="btn btn-xs btn-outline" onclick="quickScheduleVisit('Bangalore')">🏠 Visit (Bangalore)</button>
-                        <button class="btn btn-xs btn-outline" onclick="quickScheduleVisit('Gurgaon')">🏠 Visit (Gurgaon)</button>
+                    </div>
+                </div>
+            `;
+        }
+
+        if (actions.some(a => a.type === 'schedule_technician')) {
+            widgetHTML += `
+                <div class="chat-widget-card">
+                    <div class="chat-widget-title"><i class="fa-solid fa-house text-gold"></i> Confirm Your Doorstep Visit:</div>
+                    <p class="text-xs text-muted mt-1">Pick a city to confirm the visit:</p>
+                    <div class="chat-widget-actions mt-2">
+                        <button class="btn btn-xs btn-outline" onclick="quickScheduleVisit('Mumbai')">🏠 Mumbai</button>
+                        <button class="btn btn-xs btn-outline" onclick="quickScheduleVisit('Bangalore')">🏠 Bangalore</button>
+                        <button class="btn btn-xs btn-outline" onclick="quickScheduleVisit('Gurgaon')">🏠 Gurgaon</button>
+                    </div>
+                </div>
+            `;
+        }
+
+        // 4b. Virtual Try-On placeholder card - previously request_photo and
+        // show_style_preview produced literally no visible UI at all (just
+        // a console/monitor log line), so choosing this option looked like
+        // it did nothing. This gives it a real, honest placeholder instead.
+        if (actions.some(a => ['request_photo', 'show_style_preview'].includes(a.type))) {
+            widgetHTML += `
+                <div class="chat-widget-card">
+                    <div class="chat-widget-title"><i class="fa-solid fa-camera text-gold"></i> Virtual Try-On (Beta):</div>
+                    <p class="text-xs text-muted mt-1">Live camera preview is coming soon. For now, here's a placeholder - you can still continue with manual sizing or a doorstep visit any time.</p>
+                    <div class="chat-widget-actions mt-2">
+                        <button class="btn btn-xs btn-gold" onclick="quickVirtualTryOn()"><i class="fa-solid fa-wand-magic-sparkles"></i> See Placeholder Preview</button>
                     </div>
                 </div>
             `;
