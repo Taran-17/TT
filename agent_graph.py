@@ -205,6 +205,8 @@ def _extract_session_slots(messages: List[Dict[str, str]]) -> Dict[str, Any]:
         slots["garment"] = "Custom Shirt"
     elif "suit" in text or "tuxedo" in text or "blazer" in text:
         slots["garment"] = "Custom Suit"
+    elif "trouser" in text or "pant" in text or "chino" in text:
+        slots["garment"] = "Trousers"
     elif "wedding" in text or "groom" in text:
         slots["garment"] = "Wedding Wear"
     elif "ethnic" in text or "kurta" in text or "sherwani" in text:
@@ -235,6 +237,18 @@ def _extract_session_slots(messages: List[Dict[str, str]]) -> Dict[str, Any]:
     budget = _extract_budget(text)
     if budget:
         slots["budget"] = budget
+    else:
+        # No number given, but the customer may still have signaled that
+        # budget matters to them ("low on budget", "keep it cheap"). This
+        # used to fall through silently - the model had nothing telling it
+        # budget was even relevant, so it kept asking about fabric/style and
+        # only circled back to budget as an afterthought near the end.
+        # Surfacing this as its own slot lets the system prompt explicitly
+        # tell the model to pin down a real number *now*, not later.
+        for phrase in ["low budget", "low on budget", "tight budget", "keep it cheap", "cheap", "affordable", "budget friendly", "budget-friendly", "inexpensive", "economical", "not expensive"]:
+            if phrase in text:
+                slots["budget_sensitivity"] = "price-conscious (no number given yet)"
+                break
 
     return slots
 
@@ -318,7 +332,7 @@ Customer History (from previous visits on this device, if any - use it, don't as
 {fashion_context if fashion_context else ""}
 
 SHOPPING AGENT RULES:
-1. PROGRESS THE SHOPPING FUNNEL: Do NOT ask the same question twice if details are already in 'Already Identified Details' or 'Customer History'. If a returning customer's body type, fit, or past purchases are on file, reuse them by default and only ask if they want something different this time.
+1. PROGRESS THE SHOPPING FUNNEL, IN THIS ORDER - Garment -> Occasion -> Budget -> Fabric/Product Recommendation -> Sizing/Measurements -> Add to Bag. Budget comes BEFORE fabric/style choices, not after - narrowing down fabric or styling options before you know the budget means you may walk the customer through choices they can't actually afford, then have to backtrack. Do NOT ask the same question twice if details are already in 'Already Identified Details' or 'Customer History'. If a returning customer's body type, fit, or past purchases are on file, reuse them by default and only ask if they want something different this time. If 'Already Identified Details' shows a `budget_sensitivity` value (the customer said something like "low budget" or "keep it cheap" without giving an actual number), treat that as a signal to ask for a concrete budget range right now with a `present_options` action (e.g. options like "Under ₹2,000", "₹2,000-₹4,000", "₹4,000-₹6,000", "Above ₹6,000" - adjust the ranges to the actual item category) BEFORE moving on to fabric or style - don't let it sit unresolved until the end of the conversation.
 2. CLICKABLE OPTIONS, WHEN THEY ACTUALLY HELP: If your reply asks the customer to pick between a small set of concrete choices (an occasion, a fabric family, a size), include a `present_options` action with 3-5 options.
    Example action: `{{"type": "present_options", "title": "Choose Occasion", "options": ["Office Formal", "Wedding Reception", "Casual Weekend", "Party Wear"]}}`
    Do NOT attach `present_options` to a reply that isn't actually posing that kind of choice (a plain answer, an acknowledgement, small talk) - forcing a widget onto every message is what makes the chat feel cluttered.
