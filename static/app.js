@@ -1321,6 +1321,9 @@ async function processAgentActions(actions) {
                 await new Promise(resolve => setTimeout(resolve, 600));
                 submitCustomization();
                 updateMonitor(`Result: Add to Bag completed`);
+                if (typeof action.style_score === 'number') {
+                    updateMonitor(`Style score for this pick: ${action.style_score}/100 (${action.style_rationale || ''})`);
+                }
                 break;
                 
             case 'open_cart':
@@ -1340,6 +1343,26 @@ async function processAgentActions(actions) {
 
             case 'show_recommendations':
                 updateMonitor('Result: Displayed recommendations context');
+                if (action.product_scores) {
+                    const summary = Object.entries(action.product_scores)
+                        .map(([pid, s]) => `${pid}: ${s.style_score}/100`).join(', ');
+                    updateMonitor(`Style scores - ${summary}`);
+                }
+                if (typeof action.compatibility_score === 'number') {
+                    updateMonitor(`Outfit compatibility: ${action.compatibility_score}/100 (${action.compatibility_rationale || ''})`);
+                }
+                break;
+
+            case 'outfit_plan':
+                // Deterministic, backend-computed complete-outfit suggestion
+                // (see outfit_planner.py) - kept as a simple monitor/toast
+                // line for now rather than a new designed widget.
+                if (action.items && action.items.length) {
+                    const itemsText = action.items.map(i => `${i.name} (₹${i.price.toLocaleString()})`).join(' + ');
+                    const budgetText = action.budget ? ` | Budget ₹${action.budget.toLocaleString()}${action.within_budget === false ? ' (over budget)' : ''}` : '';
+                    showToast(`Suggested outfit: ${itemsText}${budgetText}`);
+                    updateMonitor(`Outfit plan: ${itemsText} | Total ₹${action.total_price.toLocaleString()}${budgetText} | Compatibility ${action.compatibility_score}/100`);
+                }
                 break;
 
             case 'compare_products':

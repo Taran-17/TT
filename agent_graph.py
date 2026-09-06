@@ -9,7 +9,19 @@ from typing import Any, Dict, List, Optional, TypedDict
 from langgraph.graph import END, START, StateGraph
 from groq import Groq
 
-from agent_store import decrement_stock, get_session_snapshot, record_event, upsert_session
+import fashion_knowledge
+import outfit_planner
+import product_catalog
+from agent_store import (
+    decrement_stock,
+    get_customer_profile,
+    get_order_history,
+    get_session_snapshot,
+    record_event,
+    record_order,
+    upsert_customer_profile,
+    upsert_session,
+)
 from redis_layer import get_cached_response, get_session_state, publish_event, set_cached_response, set_session_state
 from workflow_catalog import classify_conversation, related_workflows, render_workflow_brief
 
@@ -44,6 +56,7 @@ ALLOWED_ACTION_TYPES = {
     "save_preferences",
     "start_consultation",
     "present_options",
+    "outfit_plan",  # deterministic, backend-computed - see _maybe_attach_outfit_plan
 }
 
 ALLOWED_PAGES = {"home", "men", "women", "accessories"}
@@ -219,14 +232,69 @@ def _extract_session_slots(messages: List[Dict[str, str]]) -> Dict[str, Any]:
             slots["city"] = city.title()
             break
 
+    budget = _extract_budget(text)
+    if budget:
+        slots["budget"] = budget
+
     return slots
 
 
-def _build_system_prompt(workflow, related, branch: str, messages: List[Dict[str, str]] = None) -> str:
+_BUDGET_PATTERN = re.compile(
+    r"(?:budget|under|within|below|less than|around|about)?\s*(?:rs\.?|inr|₹)?\s*"
+    r"(\d[\d,]*)\s*(k|000)?",
+    re.IGNORECASE,
+)
+
+
+def _extract_budget(text: str) -> Optional[int]:
+    """Best-effort extraction of a stated budget figure, e.g. "under 25k",
+    "budget is around 30000", "₹20,000". Deliberately conservative - only
+    fires near an actual budget-signaling word or a rupee marker, so it
+    doesn't misfire on unrelated numbers (a phone number, a date)."""
+    if not any(marker in text for marker in ["budget", "₹", "rs.", "rs ", "inr", "afford", "spend"]):
+        return None
+    for match in _BUDGET_PATTERN.finditer(text):
+        digits, thousands_suffix = match.group(1), match.group(2)
+        if not digits:
+            continue
+        value = int(digits.replace(",", ""))
+        if thousands_suffix and thousands_suffix.lower() == "k":
+            value *= 1000
+        if 500 <= value <= 2_000_000:  # sane range for this catalog; filters out stray small numbers
+            return value
+    return None
+
+
+def _build_system_prompt(
+    workflow,
+    related,
+    branch: str,
+    messages: List[Dict[str, str]] = None,
+    session_id: Optional[str] = None,
+) -> str:
     related_text = "\n".join([f"- {item.title} ({item.id})" for item in related]) if related else "- None"
     messages = messages or []
     slots = _extract_session_slots(messages)
     turn_count = len([m for m in messages if m.get("role") == "user"])
+
+    profile = get_customer_profile(session_id) if session_id else None
+    body_type = profile.get("body_type") if profile else None
+    order_history = get_order_history(session_id, limit=5) if session_id else []
+
+    fashion_context = fashion_knowledge.build_fashion_context(slots, body_type=body_type)
+
+    profile_lines = []
+    if profile:
+        known = {k: v for k, v in profile.items() if v and k not in {"session_id", "updated_at"}}
+        if known:
+            profile_lines.append(f"- Returning customer profile on file: {json.dumps(known)}")
+    if order_history:
+        past_items = ", ".join(
+            f"{o['product_name'] or o['product_id']} (₹{o['price']})" for o in order_history if o.get("product_id")
+        )
+        if past_items:
+            profile_lines.append(f"- Past purchases on this device: {past_items}")
+    profile_section = "\n".join(profile_lines) if profile_lines else "- No returning-customer data on file yet."
 
     return f"""You are the TechTailor AI Concierge & Executive Shopping Assistant.
 You are operating inside a LangGraph workflow to guide customers from discovery to customization, sizing, and checkout.
@@ -244,15 +312,22 @@ Session Memory State:
 - Turn Count: {turn_count}
 - Already Identified Details: {json.dumps(slots) if slots else "None yet"}
 
+Customer History (from previous visits on this device, if any - use it, don't ask for what's already known here):
+{profile_section}
+
+{fashion_context if fashion_context else ""}
+
 SHOPPING AGENT RULES:
-1. PROGRESS THE SHOPPING FUNNEL: Do NOT ask the same question twice if details are already in 'Already Identified Details'. Move directly to the next stage (e.g., Occasion -> Fabric/Product Recommendation -> Sizing/Measurements -> Add to Bag).
+1. PROGRESS THE SHOPPING FUNNEL: Do NOT ask the same question twice if details are already in 'Already Identified Details' or 'Customer History'. If a returning customer's body type, fit, or past purchases are on file, reuse them by default and only ask if they want something different this time.
 2. CLICKABLE OPTIONS, WHEN THEY ACTUALLY HELP: If your reply asks the customer to pick between a small set of concrete choices (an occasion, a fabric family, a size), include a `present_options` action with 3-5 options.
    Example action: `{{"type": "present_options", "title": "Choose Occasion", "options": ["Office Formal", "Wedding Reception", "Casual Weekend", "Party Wear"]}}`
    Do NOT attach `present_options` to a reply that isn't actually posing that kind of choice (a plain answer, an acknowledgement, small talk) - forcing a widget onto every message is what makes the chat feel cluttered.
 3. VISUAL PRODUCT & FABRIC RECOMMENDATIONS, ON REQUEST OR AT A REAL DECISION POINT: When you are recommending specific garments for the customer to choose between, output one `show_recommendations` action with product IDs (`silver-slate`, `pearl-white`, `umber-pinstripe`, `soot-black`, `misty-aqua`, `printed-tie-combo`, `mens-belt`). When you're actually walking them through fabric choices, output one `customize_fabric` action. Merely using the word "fabric" or "recommend" in a sentence is not itself a reason to attach one of these - only attach it when you are presenting products/fabrics for them to pick from right now, and don't stack more than one visual action in a single reply.
-4. SIZING & TAILORING: Offer `request_measurements` or `schedule_technician` (cities: Mumbai, Bangalore, Gurgaon) actions when sizing is actually being discussed.
-5. DRIVE TO CART: When the customer expresses clear interest in buying or ordering a specific item, output `add_to_bag` or `open_cart`.
-6. RESPONSE LENGTH SHOULD MATCH THE MOMENT: a confirmation or a direct answer can be one short sentence; a recommendation or an explanation the customer asked for deserves the room to actually say something useful (a real sentence or two of reasoning, not just a label). Never pad, but never clip a genuinely useful answer down to a fragment just to "be concise" - a one-word reply to a real question reads as broken, not efficient. Sound like a knowledgeable, warm human stylist having a conversation, not a form generating field prompts.
+4. GROUND RECOMMENDATIONS IN THE FASHION KNOWLEDGE ABOVE, WHEN PRESENT: if a "Fashion Knowledge" section is included, use its specific facts (formality level, fabric warmth, body-type fit guidance) to explain *why* something suits the customer, instead of a generic assertion like "this looks great on you." If there's no Fashion Knowledge section, don't invent styling facts you're not confident are true.
+5. SIZING & TAILORING: Offer `request_measurements` or `schedule_technician` (cities: Mumbai, Bangalore, Gurgaon) actions when sizing is actually being discussed.
+6. DRIVE TO CART: When the customer expresses clear interest in buying or ordering a specific item, output `add_to_bag` or `open_cart`.
+7. RESPONSE LENGTH SHOULD MATCH THE MOMENT: a confirmation or a direct answer can be one short sentence; a recommendation or an explanation the customer asked for deserves the room to actually say something useful (a real sentence or two of reasoning, not just a label). Never pad, but never clip a genuinely useful answer down to a fragment just to "be concise" - a one-word reply to a real question reads as broken, not efficient. Sound like a knowledgeable, warm human stylist having a conversation, not a form generating field prompts.
+8. Note: a complete outfit plan (garment + accessory, styled to the occasion and any budget mentioned) is computed automatically by the backend when enough is known - you do not need to build one yourself; just keep the conversation natural.
 
 Return valid JSON with keys: response and actions."""
 
@@ -426,9 +501,12 @@ def _generate_response(state: AgentState, branch: str) -> AgentState:
     workflow_id = state["workflow_id"]
     from workflow_catalog import WORKFLOW_INDEX
 
+    session_id = state.get("session_id") or "default"
     workflow = WORKFLOW_INDEX[workflow_id]
     related = related_workflows(workflow)
-    system_prompt = state.get("system_prompt") or _build_system_prompt(workflow, related, branch, state.get("messages", []))
+    system_prompt = state.get("system_prompt") or _build_system_prompt(
+        workflow, related, branch, state.get("messages", []), session_id=session_id
+    )
     api_messages: List[Dict[str, str]] = [{"role": "system", "content": system_prompt}]
     for message in state["messages"]:
         role = message.get("role")
@@ -462,10 +540,86 @@ def _generate_response(state: AgentState, branch: str) -> AgentState:
 
     response_text = response_json.get("response", "")
     actions = _normalize_actions(response_json.get("actions", []), workflow.id)
+    actions = _enrich_actions(session_id, state.get("messages", []), actions)
     return {
         "response": response_text,
         "actions": actions,
     }
+
+
+def _enrich_actions(session_id: str, messages: List[Dict[str, str]], actions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Everything in this function is deterministic arithmetic against
+    product_catalog/fashion_knowledge/outfit_planner - none of it is another
+    LLM call. This is where "the model said to recommend X" turns into "and
+    here's a grounded, rule-based score for why X suits them," and where a
+    customer's stated measurements get persisted for next time."""
+    slots = _extract_session_slots(messages)
+
+    # 1. Persist measurements the moment they're given, so a *future* visit
+    #    (see get_customer_profile in _build_system_prompt) doesn't have to
+    #    ask again.
+    for action in actions:
+        if action.get("type") == "customize_measurements":
+            upsert_customer_profile(
+                session_id,
+                body_type=action.get("body_type"),
+                height=action.get("height"),
+                fitting=action.get("fitting"),
+                size_method=action.get("size_method"),
+                measurements=action.get("custom_measurements"),
+            )
+
+    profile = get_customer_profile(session_id)
+    body_type = profile.get("body_type") if profile else None
+    occasion = slots.get("occasion")
+
+    # 2. Attach a grounded style score to every product a recommendation
+    #    action surfaces, plus a compatibility score across the set.
+    for action in actions:
+        if action.get("type") in {"show_recommendations", "compare_products", "offer_alternative"}:
+            product_ids = action.get("product_ids") or []
+            scores = {}
+            for pid in product_ids:
+                score, rationale = fashion_knowledge.style_score(pid, occasion=occasion, body_type=body_type)
+                scores[pid] = {"style_score": score, "rationale": rationale}
+            if scores:
+                action["product_scores"] = scores
+            if len(product_ids) > 1:
+                compat_score, compat_rationale = fashion_knowledge.compatibility_score(product_ids)
+                action["compatibility_score"] = compat_score
+                action["compatibility_rationale"] = compat_rationale
+        elif action.get("type") == "add_to_bag" and action.get("product_id"):
+            score, rationale = fashion_knowledge.style_score(action["product_id"], occasion=occasion, body_type=body_type)
+            action["style_score"] = score
+            action["style_rationale"] = rationale
+
+    # 3. Auto-plan a complete outfit once we know enough (occasion + a
+    #    garment category that isn't accessories-only), whether or not a
+    #    budget was ever stated - this is the actual fix for "doesn't plan
+    #    an outfit within budget when one isn't specified." Only attach it
+    #    once per distinct (occasion, budget) combination for this session,
+    #    so it doesn't repeat on every turn once shown.
+    garment = slots.get("garment")
+    if occasion and garment and garment != "Accessories":
+        budget = slots.get("budget")
+        signature = f"{occasion}:{budget}"
+        session_memory = _get_session_memory(session_id)
+        if session_memory.get("outfit_plan_signature") != signature:
+            # No gender slot is extracted from chat text today, and the
+            # catalog is men-led (2 of 8 SKUs are women's, with no women's
+            # accessories yet) - defaulting to "men" here is an honest
+            # limitation of the current catalog, not a hidden assumption;
+            # worth revisiting once gender is captured as its own slot.
+            gender = "men"
+            plan = outfit_planner.plan_outfit(
+                occasion=occasion.lower(), budget=budget, gender=gender, body_type=body_type
+            )
+            if plan.get("items"):
+                actions.append({"type": "outfit_plan", **plan})
+            session_memory["outfit_plan_signature"] = signature
+            _set_session_memory(session_id, session_memory)
+
+    return actions
 
 
 def _route_workflow(state: AgentState) -> AgentState:
@@ -475,7 +629,9 @@ def _route_workflow(state: AgentState) -> AgentState:
     selected, score = classify_conversation(recent_user_messages)
     selected = _session_fallback(session_id, selected, score)
     branch = _branch_for_bucket(selected.intent_bucket)
-    _set_session_memory(session_id, {"workflow_id": selected.id})
+    session_memory = _get_session_memory(session_id)
+    session_memory["workflow_id"] = selected.id
+    _set_session_memory(session_id, session_memory)
     upsert_session(
         session_id=session_id,
         workflow_id=selected.id,
@@ -564,6 +720,18 @@ def _persist_node(state: AgentState) -> AgentState:
             publish_event(
                 "stock_update",
                 {"product_id": action["product_id"], "remaining_stock": remaining, "session_id": session_id},
+            )
+            # Recorded here (not in _generate_response) because this is
+            # where we already know the final workflow_id for this turn -
+            # this is the raw fact a *future* visit's "Customer History"
+            # section (see _build_system_prompt) reads back.
+            product = product_catalog.get_product(action["product_id"])
+            record_order(
+                session_id,
+                product_id=action["product_id"],
+                product_name=product["name"] if product else None,
+                price=product["price"] if product else None,
+                workflow_id=state.get("workflow_id"),
             )
 
     publish_event(

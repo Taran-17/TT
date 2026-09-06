@@ -99,6 +99,45 @@ class StockRow(Base):
     updated_at = Column(DateTime(timezone=True), default=_utc_now, onupdate=_utc_now)
 
 
+class CustomerProfileRow(Base):
+    """One row per browser/session_id (the closest thing this prototype has
+    to a stable customer identity - see redis_layer/app.js: session_id is
+    persisted in the browser's localStorage, so it survives across visits on
+    the same device even though there's no login). Captures whatever
+    measurement/fit details the customer has given so a *future* visit can
+    reuse them instead of asking again - the "doesn't remember previous
+    ... for future recommendations" gap.
+    """
+
+    __tablename__ = "customer_profiles"
+
+    session_id = Column(String, primary_key=True)
+    body_type = Column(String, nullable=True)
+    height = Column(String, nullable=True)
+    fitting = Column(String, nullable=True)
+    size_method = Column(String, nullable=True)
+    measurements_json = Column(Text, nullable=True)
+    updated_at = Column(DateTime(timezone=True), default=_utc_now, onupdate=_utc_now)
+
+
+class OrderRow(Base):
+    """A line item recorded whenever the agent issues an `add_to_bag`
+    action. This is what lets a later session say "reuse what you bought
+    last time" with an actual fact instead of the model inferring it from
+    chat text alone.
+    """
+
+    __tablename__ = "orders"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    session_id = Column(String, nullable=False, index=True)
+    product_id = Column(String, nullable=False)
+    product_name = Column(String, nullable=True)
+    price = Column(Integer, nullable=True)
+    workflow_id = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=_utc_now)
+
+
 @contextmanager
 def _session():
     db = SessionLocal()
@@ -289,6 +328,92 @@ def decrement_stock(product_id: str, amount: int = 1) -> Optional[int]:
         row.quantity = max(0, row.quantity - amount)
         db.flush()
         return row.quantity
+
+
+# --- Customer profile (measurements/body type persisted across visits) -----
+
+def upsert_customer_profile(
+    session_id: str,
+    body_type: Optional[str] = None,
+    height: Optional[str] = None,
+    fitting: Optional[str] = None,
+    size_method: Optional[str] = None,
+    measurements: Optional[Dict[str, Any]] = None,
+) -> None:
+    with _session() as db:
+        row = db.get(CustomerProfileRow, session_id)
+        if not row:
+            row = CustomerProfileRow(session_id=session_id)
+            db.add(row)
+        if body_type:
+            row.body_type = body_type
+        if height:
+            row.height = height
+        if fitting:
+            row.fitting = fitting
+        if size_method:
+            row.size_method = size_method
+        if measurements:
+            row.measurements_json = json.dumps(measurements, default=str)
+        row.updated_at = _utc_now()
+
+
+def get_customer_profile(session_id: str) -> Optional[Dict[str, Any]]:
+    with _session() as db:
+        row = db.get(CustomerProfileRow, session_id)
+        if not row:
+            return None
+        return {
+            "session_id": row.session_id,
+            "body_type": row.body_type,
+            "height": row.height,
+            "fitting": row.fitting,
+            "size_method": row.size_method,
+            "measurements": json.loads(row.measurements_json) if row.measurements_json else None,
+            "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+        }
+
+
+# --- Order history (so a future visit can reference what was actually bought) -
+
+def record_order(
+    session_id: str,
+    product_id: str,
+    product_name: Optional[str] = None,
+    price: Optional[int] = None,
+    workflow_id: Optional[str] = None,
+) -> None:
+    with _session() as db:
+        db.add(
+            OrderRow(
+                session_id=session_id,
+                product_id=product_id,
+                product_name=product_name,
+                price=price,
+                workflow_id=workflow_id,
+            )
+        )
+
+
+def get_order_history(session_id: str, limit: int = 10) -> List[Dict[str, Any]]:
+    with _session() as db:
+        rows = (
+            db.query(OrderRow)
+            .filter(OrderRow.session_id == session_id)
+            .order_by(OrderRow.id.desc())
+            .limit(limit)
+            .all()
+        )
+        return [
+            {
+                "product_id": row.product_id,
+                "product_name": row.product_name,
+                "price": row.price,
+                "workflow_id": row.workflow_id,
+                "created_at": row.created_at.isoformat() if row.created_at else None,
+            }
+            for row in rows
+        ]
 
 
 init_store()
